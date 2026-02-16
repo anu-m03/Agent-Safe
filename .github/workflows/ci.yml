@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @agent-safe/shared build
+
+      - name: Build backend
+        run: pnpm --filter @agent-safe/backend build
+
+      - name: Build frontend
+        run: pnpm --filter @agent-safe/web build
+
+      - name: Lint
+        run: pnpm lint
+
+  contracts:
+    name: Foundry Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install contract dependencies
+        run: forge install
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Run tests
+        run: forge test -vvv

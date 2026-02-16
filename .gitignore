@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+out/
+.turbo/
+.env
+.env.local
+*.log
+coverage/
+.DS_Store
+
+# Foundry
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/

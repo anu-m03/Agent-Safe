@@ -1,0 +1,24 @@
+{
+  "name": "agent-safe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AgentSafe – ERC-4337 smart wallet with SwarmGuard multi-agent defense and GovernanceSafe voting automation",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "prettier": "^3.2.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
