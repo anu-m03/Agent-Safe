@@ -1,112 +1,62 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { getProposals } from '@/services/backendClient';
+import { ProposalCard } from '@/components/ProposalCard';
+import type { ProposalSummary } from '@agent-safe/shared';
+
 /**
- * Governance page – proposals feed, summaries, recommendations, veto controls.
+ * Governance page – live proposals feed with AI recommendations, veto controls.
  */
 export default function GovernancePage() {
+  const [proposals, setProposals] = useState<ProposalSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await getProposals();
+    if (res.ok) {
+      setProposals(res.data.proposals);
+      setError(null);
+    } else {
+      setError(res.error);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
   return (
     <div>
-      <h2 className="mb-6 text-2xl font-bold text-white">Governance</h2>
+      <h2 className="mb-2 text-2xl font-bold text-white">Governance Inbox</h2>
+      <p className="mb-6 text-sm text-gray-500">
+        DAO proposals with AI-powered recommendation engine. Click &quot;Get AI Recommendation&quot; to analyse any proposal.
+      </p>
 
-      {/* DAO selector */}
-      <div className="mb-6 flex items-center gap-4">
-        <span className="text-sm text-gray-400">DAO:</span>
-        <span className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-2 text-sm text-white">
-          exampledao.eth
-        </span>
-      </div>
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-800 bg-red-900/20 p-4 text-sm text-safe-red">
+          Failed to load proposals: {error}
+          <button onClick={load} className="ml-3 underline hover:text-white">Retry</button>
+        </div>
+      )}
 
-      {/* Proposals */}
+      {loading && (
+        <div className="rounded-xl border border-gray-800 bg-safe-card p-8 text-center text-gray-400 animate-pulse">
+          Loading proposals…
+        </div>
+      )}
+
+      {!loading && proposals.length === 0 && !error && (
+        <div className="rounded-xl border border-gray-800 bg-safe-card p-8 text-center text-gray-500">
+          No proposals found. Make sure the backend is running.
+        </div>
+      )}
+
       <div className="space-y-4">
-        <ProposalCard
-          title="Increase Treasury Allocation to Marketing"
-          status="active"
-          recommendation="FOR"
-          confidence={78}
-          summary="Clear scope, reasonable budget, author has good track record."
-          suspicious={false}
-        />
-        <ProposalCard
-          title="Upgrade Core Contract to v2.1"
-          status="active"
-          recommendation="AGAINST"
-          confidence={65}
-          summary="Contract upgrade includes new admin functions and treasury access. Requires careful review."
-          suspicious={false}
-        />
-        <ProposalCard
-          title="Reduce Quorum Threshold from 10% to 2%"
-          status="active"
-          recommendation="AGAINST"
-          confidence={91}
-          summary="Reducing quorum to 2% creates governance attack vector. A small holder could pass malicious proposals."
-          suspicious={true}
-          riskFlags={['quorum_manipulation', 'governance_attack_vector']}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ProposalCard({
-  title,
-  status,
-  recommendation,
-  confidence,
-  summary,
-  suspicious,
-  riskFlags,
-}: {
-  title: string;
-  status: string;
-  recommendation: string;
-  confidence: number;
-  summary: string;
-  suspicious: boolean;
-  riskFlags?: string[];
-}) {
-  const borderColor = suspicious ? 'border-red-900/50' : 'border-gray-800';
-  const recColor =
-    recommendation === 'FOR'
-      ? 'text-safe-green bg-green-950'
-      : recommendation === 'AGAINST'
-        ? 'text-safe-red bg-red-950'
-        : 'text-safe-yellow bg-yellow-950';
-
-  return (
-    <div className={`rounded-xl border ${borderColor} bg-safe-card p-6`}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-white">{title}</h3>
-            <span className="rounded-full bg-gray-800 px-2 py-0.5 text-xs text-gray-400">
-              {status}
-            </span>
-          </div>
-          <p className="mt-2 text-sm text-gray-400">{summary}</p>
-          {riskFlags && riskFlags.length > 0 && (
-            <div className="mt-2 flex gap-2">
-              {riskFlags.map((flag) => (
-                <span key={flag} className="rounded bg-red-900/30 px-2 py-0.5 text-xs text-safe-red">
-                  ⚠ {flag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="ml-4 flex flex-col items-end gap-2">
-          <span className={`rounded-lg px-3 py-1 text-sm font-bold ${recColor}`}>
-            {recommendation}
-          </span>
-          <span className="text-xs text-gray-500">{confidence}% confidence</span>
-          <div className="flex gap-2 mt-2">
-            <button className="rounded bg-safe-green/20 px-3 py-1 text-xs text-safe-green hover:bg-safe-green/30">
-              Auto-Vote
-            </button>
-            <button className="rounded bg-safe-red/20 px-3 py-1 text-xs text-safe-red hover:bg-safe-red/30">
-              Veto
-            </button>
-          </div>
-        </div>
+        {proposals.map((p) => (
+          <ProposalCard key={p.id} proposal={p} />
+        ))}
       </div>
     </div>
   );

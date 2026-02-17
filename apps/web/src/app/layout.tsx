@@ -15,12 +15,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Sidebar */}
           <aside className="w-64 border-r border-gray-800 bg-safe-dark p-6">
             <h1 className="mb-8 text-xl font-bold text-white">🛡️ AgentSafe</h1>
-            <nav className="flex flex-col gap-2">
-              <NavLink href="/">Dashboard</NavLink>
-              <NavLink href="/transactions">Transactions</NavLink>
-              <NavLink href="/governance">Governance</NavLink>
-              <NavLink href="/swarm">Swarm Feed</NavLink>
-              <NavLink href="/policies">Policies</NavLink>
+            <nav className="flex flex-col gap-1">
+              <NavLink href="/dashboard">📊 Dashboard</NavLink>
+              <NavLink href="/defense">🛡️ Defense</NavLink>
+              <NavLink href="/governance">🗳️ Governance</NavLink>
+              <NavLink href="/policy">📜 Policy</NavLink>
+              <NavLink href="/integrations">🔗 Integrations</NavLink>
+              <div className="my-2 border-t border-gray-800" />
+              <NavLink href="/swarm">💬 Swarm Feed</NavLink>
+              <NavLink href="/transactions">📝 Transactions</NavLink>
+              <NavLink href="/policies">⚙️ Settings</NavLink>
             </nav>
           </aside>
 

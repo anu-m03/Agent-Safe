@@ -70,3 +70,4 @@ export { PolicyConfigSchema } from './schemas/policy';
 
 // Constants
 export * from './constants';
+export type { ChainConfig } from './constants/chains';
