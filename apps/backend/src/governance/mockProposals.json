@@ -1,0 +1,35 @@
+[
+  {
+    "id": "proposal-001",
+    "title": "Increase USDC treasury allocation to 40%",
+    "body": "This proposal seeks to re-balance the DAO treasury by increasing the USDC allocation from 25% to 40%, reducing ETH exposure. Funds would be moved from the multi-sig to the yield vault.",
+    "space": "agentsafe.eth",
+    "start": 1717200000000,
+    "end": 1717804800000,
+    "choices": ["For", "Against", "Abstain"],
+    "snapshot": "19500000",
+    "url": "https://snapshot.org/#/agentsafe.eth/proposal/001"
+  },
+  {
+    "id": "proposal-002",
+    "title": "Upgrade proxy to v2.1 — emergency patch",
+    "body": "Emergency upgrade to fix a critical vulnerability in the proxy contract. The admin key will be rotated and the quorum threshold adjusted from 3/5 to 4/7. Immediate action is requested.",
+    "space": "agentsafe.eth",
+    "start": 1717200000000,
+    "end": 1717804800000,
+    "choices": ["For", "Against", "Abstain"],
+    "snapshot": "19500100",
+    "url": "https://snapshot.org/#/agentsafe.eth/proposal/002"
+  },
+  {
+    "id": "proposal-003",
+    "title": "Add new MEV Watcher module to SwarmGuard",
+    "body": "Proposal to integrate an on-chain MEV monitoring module into the SwarmGuard pipeline. This is a non-financial, technical improvement that enhances transaction security for all Safe users.",
+    "space": "agentsafe.eth",
+    "start": 1717200000000,
+    "end": 1717804800000,
+    "choices": ["For", "Against", "Abstain"],
+    "snapshot": "19500200",
+    "url": "https://snapshot.org/#/agentsafe.eth/proposal/003"
+  }
+]
