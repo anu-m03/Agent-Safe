@@ -52,7 +52,9 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Install contract dependencies
-        run: forge install
+        run: |
+          forge install OpenZeppelin/openzeppelin-contracts --no-commit
+          forge install foundry-rs/forge-std --no-commit
 
       - name: Build contracts
         run: forge build
