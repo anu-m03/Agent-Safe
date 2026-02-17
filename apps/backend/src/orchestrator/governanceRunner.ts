@@ -2,7 +2,7 @@ import type { VoteIntent, VoteRecommendation } from '@agent-safe/shared';
 import crypto from 'node:crypto';
 import { summarise } from '../services/agents/kite.js';
 import { appendLog, createLogEvent } from '../storage/logStore.js';
-import { getProposals, type Proposal } from '../governance/proposals.js';
+import { getProposals, type Proposal } from '../governance/proposals';
 
 /**
  * Governance Runner — evaluates a Snapshot / on-chain proposal and
