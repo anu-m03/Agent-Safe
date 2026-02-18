@@ -14,12 +14,14 @@ import { evaluateTx as coordEval } from '../agents/coordinator.js';
 import { computeConsensus } from './consensus.js';
 import { buildIntent } from './intent.js';
 import { appendLog, createLogEvent } from '../storage/logStore.js';
+import { recordAllProvenance, type ProvenanceRecord } from '../services/rpc/kiteChain.js';
 
 export interface SwarmRunResult {
   runId: string;
   reports: AgentRiskReportV2[];
   decision: SwarmConsensusDecisionV2;
   intent: ActionIntent;
+  provenance: ProvenanceRecord[];
 }
 
 /**
@@ -67,10 +69,16 @@ export async function runSwarm(tx: InputTx): Promise<SwarmRunResult> {
     data: tx.data,
   });
 
-  // Log decision & intent
+  // Step 5 — record provenance on Kite Chain (each agent signs its report)
+  const provenance = await recordAllProvenance(allReports);
+  const provenanceRecorded = provenance.filter(p => p.recorded).length;
+  console.log(`[SwarmRunner] Provenance: ${provenanceRecorded}/${provenance.length} recorded on Kite Chain`);
+
+  // Log decision, intent & provenance
   await appendLog(createLogEvent('CONSENSUS', { decision }, 'INFO', runId));
   await appendLog(createLogEvent('INTENT', { intent }, 'INFO', runId));
+  await appendLog(createLogEvent('AGENT_REPORT', { provenance }, 'INFO', runId));
   await appendLog(createLogEvent('SWARM_END', { runId, decision: decision.decision }, 'INFO', runId));
 
-  return { runId, reports: allReports, decision, intent };
+  return { runId, reports: allReports, decision, intent, provenance };
 }

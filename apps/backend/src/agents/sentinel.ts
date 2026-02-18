@@ -1,6 +1,7 @@
 import type { AgentRiskReportV2, Severity, Recommendation } from '@agent-safe/shared';
 import type { InputTx } from '@agent-safe/shared';
 import crypto from 'node:crypto';
+import { queryKiteAI } from '../services/agents/kite.js';
 
 /**
  * Sentinel Agent – monitors wallet activity and new approvals.
@@ -68,15 +69,50 @@ export async function evaluateTx(
 
   if (reasons.length === 0) reasons.push('No suspicious patterns detected');
 
+  // ─── Kite AI Enrichment ───────────────────────────────
+  const aiResult = await queryKiteAI(
+    'Sentinel Security Agent',
+    `Analyze this transaction for approval risks and suspicious patterns:
+- To: ${tx.to}
+- Value: ${tx.value} wei
+- Selector: ${selector}
+- Kind: ${tx.kind}
+- Heuristic risk score: ${riskScore}
+- Heuristic reasons: ${reasons.join(', ')}
+- Metadata: ${JSON.stringify(tx.metadata ?? {})}`,
+    {
+      analysis: 'Heuristic fallback',
+      riskScore,
+      confidence: 60,
+      reasons,
+      recommendation,
+    },
+  );
+
+  // Merge AI result — take the higher risk score
+  const finalScore = Math.max(riskScore, aiResult.riskScore);
+  const mergedReasons = [...new Set([...reasons, ...aiResult.reasons])];
+  const finalRec = mergeRecommendation(recommendation, aiResult.recommendation);
+
+  let finalSeverity: Severity = 'LOW';
+  if (finalScore >= 80) finalSeverity = 'CRITICAL';
+  else if (finalScore >= 50) finalSeverity = 'HIGH';
+  else if (finalScore >= 25) finalSeverity = 'MEDIUM';
+
   return {
     agentId: `sentinel-${crypto.randomUUID().slice(0, 8)}`,
     agentType: 'SENTINEL',
     timestamp: Date.now(),
-    riskScore,
-    confidenceBps: riskScore > 20 ? 8500 : 6000,
-    severity,
-    reasons,
-    evidence,
-    recommendation,
+    riskScore: finalScore,
+    confidenceBps: Math.round(aiResult.confidence * 100),
+    severity: finalSeverity,
+    reasons: mergedReasons,
+    evidence: { ...evidence, aiAnalysis: aiResult.analysis },
+    recommendation: finalRec,
   };
+}
+
+function mergeRecommendation(a: Recommendation, b: Recommendation): Recommendation {
+  const rank: Record<Recommendation, number> = { ALLOW: 0, REVIEW: 1, BLOCK: 2 };
+  return rank[a] >= rank[b] ? a : b;
 }
