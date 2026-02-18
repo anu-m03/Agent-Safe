@@ -14,6 +14,12 @@ export const ProposalSummarySchema = z.object({
   choices: z.array(z.string()),
   snapshot: z.string().optional(),
   url: z.string().optional(),
+  source: z.enum(['snapshot', 'nouns']).optional(),
+  state: z.string().optional(),
+  author: z.string().optional(),
+  votes: z.number().optional(),
+  scoresTotal: z.number().optional(),
+  quorum: z.number().optional(),
 });
 
 export const VoteIntentSchema = z.object({

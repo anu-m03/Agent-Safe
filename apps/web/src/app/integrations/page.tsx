@@ -23,6 +23,8 @@ export default function IntegrationsPage() {
   const [kiteTestLoading, setKiteTestLoading] = useState(false);
   const [showRawHealth, setShowRawHealth] = useState(false);
   const [showRawStatus, setShowRawStatus] = useState(false);
+  const nounsCount = proposals?.proposals.filter((p) => p.source === 'nouns').length ?? 0;
+  const snapshotCount = proposals?.proposals.filter((p) => (p.source ?? 'snapshot') === 'snapshot').length ?? 0;
 
   const load = useCallback(async () => {
     const [h, s, p] = await Promise.all([getHealth(), getStatus(), getProposals()]);
@@ -35,9 +37,15 @@ export default function IntegrationsPage() {
   useEffect(() => { load(); }, [load]);
 
   async function testKite() {
+    const candidateProposalId = proposals?.proposals?.[0]?.id;
+    if (!candidateProposalId) {
+      setKiteTestOk(false);
+      return;
+    }
+
     setKiteTestLoading(true);
-    // Call recommend with a sample proposal to prove kite pipeline works
-    const res = await recommendVote('prop-1');
+    // Call recommend with a live proposal to prove kite pipeline works
+    const res = await recommendVote(candidateProposalId);
     setKiteTestOk(res.ok);
     setKiteTestLoading(false);
   }
@@ -152,7 +160,7 @@ export default function IntegrationsPage() {
           <div className="mt-3 flex items-center gap-3">
             <button
               onClick={testKite}
-              disabled={kiteTestLoading}
+              disabled={kiteTestLoading || !(proposals?.proposals?.length)}
               className="rounded-lg border border-blue-800 bg-safe-blue/20 px-4 py-2 text-sm font-semibold text-safe-blue hover:bg-safe-blue/30 disabled:opacity-50"
             >
               {kiteTestLoading ? 'Testing…' : 'Run Kite Summary Test'}
@@ -167,8 +175,8 @@ export default function IntegrationsPage() {
 
         {/* ─── D) Nouns / Proposal Feed ──────── */}
         <SponsorSection
-          title="Nouns / Proposal Feed"
-          subtitle="Governance Proposal Ingestion"
+          title="Nouns DAO + Snapshot"
+          subtitle="Live Governance Proposal Ingestion"
           badge={
             proposals && proposals.proposals.length > 0 ? (
               <Badge type="live" />
@@ -182,6 +190,10 @@ export default function IntegrationsPage() {
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Label>Proposals Loaded</Label>
             <Value>{proposals?.proposals?.length ?? '—'}</Value>
+            <Label>Nouns DAO Proposals</Label>
+            <Value>{proposals ? nounsCount : '—'}</Value>
+            <Label>Snapshot Proposals</Label>
+            <Value>{proposals ? snapshotCount : '—'}</Value>
           </div>
           {proposals && proposals.proposals.length > 0 && (
             <div className="mt-3 space-y-2">
@@ -195,6 +207,11 @@ export default function IntegrationsPage() {
                 >
                   <span className="font-semibold text-white">{p.title}</span>
                   <span className="ml-2 text-gray-500">[{p.space}]</span>
+                  {p.source && (
+                    <span className="ml-2 rounded border border-gray-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-300">
+                      {p.source}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

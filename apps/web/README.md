@@ -8,9 +8,9 @@ Next.js frontend dashboard for AgentSafe + SwarmGuard.
 |-------|-------------|
 | `/dashboard` | Overview — swarm status, agent count, proposals, sponsor summary |
 | `/defense` | **SwarmGuard** — evaluate transactions, agent feed + consensus + intent preview |
-| `/governance` | **GovernanceSafe** — proposals list, AI recommendation, auto-vote toggle, veto |
+| `/governance` | **GovernanceSafe** — live Nouns DAO + Snapshot proposals, AI recommendation, auto-vote toggle, veto |
 | `/policy` | Policy engine rules + consensus simulator |
-| `/integrations` | **Sponsor Proof Panel** — Base, QuickNode, Kite AI, Nouns, 0g |
+| `/integrations` | **Sponsor Proof Panel** — Base, QuickNode, Kite AI, live Nouns/Snapshot feed, 0g |
 | `/swarm` | Legacy swarm activity feed |
 | `/transactions` | Legacy transaction preview with simulation + risk scoring |
 | `/policies` | Legacy policy settings + kill switch |

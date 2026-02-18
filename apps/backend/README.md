@@ -15,11 +15,11 @@ pnpm dev               # tsx watch — http://localhost:4000
 
 | Method | Path                          | Description |
 |--------|-------------------------------|-------------|
-| GET    | `/health`                     | Rich health check (QuickNode + Kite AI status) |
+| GET    | `/health`                     | Rich health check (QuickNode + Kite AI + Snapshot status) |
 | GET    | `/status`                     | Quick liveness probe |
 | POST   | `/api/swarm/evaluate-tx`      | Evaluate a transaction through SwarmGuard |
 | GET    | `/api/swarm/logs`             | Fetch audit log (`?runId=...&limit=100`) |
-| GET    | `/api/governance/proposals`   | List mock governance proposals |
+| GET    | `/api/governance/proposals`   | List live Snapshot proposals (Nouns + configured spaces, with mock fallback) |
 | GET    | `/api/governance/proposals/:id` | Get single proposal |
 | POST   | `/api/governance/recommend`   | Get vote recommendation for a proposal |
 
@@ -46,13 +46,14 @@ src/
 │   ├── intent.ts                  Maps consensus decision → ActionIntent
 │   └── governanceRunner.ts        Proposal evaluation via Kite AI + policies
 ├── governance/
-│   ├── proposals.ts               Reads mockProposals.json
-│   └── mockProposals.json         3 sample proposals
+│   ├── proposals.ts               Live Snapshot loader + cache + mock fallback
+│   └── mockProposals.json         Fallback sample proposals
 ├── storage/
 │   └── logStore.ts                JSONL-backed audit log
 └── services/
     ├── rpc/quicknode.ts           QuickNode RPC wrapper (graceful degradation)
-    └── agents/kite.ts             Kite AI summarise / classify (stub fallback)
+    ├── agents/kite.ts             Kite AI summarise / classify (stub fallback)
+    └── snapshot.ts                Snapshot GraphQL service + health check
 ```
 
 ## Agents (V2)
@@ -82,6 +83,10 @@ All agents export `evaluateTx(ctx, tx): Promise<AgentRiskReportV2>` and run
 | `QUICKNODE_RPC_URL`| No       |         | Base-chain RPC; omit for disabled mode |
 | `KITE_BASE_URL`    | No       |         | Kite AI endpoint; omit for stub mode |
 | `KITE_API_KEY`     | No       |         | Bearer token for Kite AI |
+| `SNAPSHOT_GRAPHQL_URL` | No   | `https://hub.snapshot.org/graphql` | Snapshot Hub GraphQL endpoint |
+| `NOUNS_SNAPSHOT_SPACE` | No   | `nouns.eth` | Snapshot space used for Nouns DAO feed |
+| `SNAPSHOT_SPACES`  | No       | `agentsafe.eth` | Comma-separated additional Snapshot spaces |
+| `GOVERNANCE_CACHE_TTL_MS` | No | `60000` | Proposal cache duration in ms |
 | `LOG_STORE_PATH`   | No       | `.data` | Directory for JSONL logs |
 
 ## Example curl commands

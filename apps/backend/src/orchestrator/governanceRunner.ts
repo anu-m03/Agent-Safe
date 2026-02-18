@@ -11,7 +11,7 @@ import { getProposals, type Proposal } from '../governance/proposals';
 export async function recommendVote(
   proposalId: string,
 ): Promise<VoteIntent | null> {
-  const proposals = getProposals();
+  const proposals = await getProposals();
   const proposal = proposals.find((p) => p.id === proposalId);
 
   if (!proposal) return null;

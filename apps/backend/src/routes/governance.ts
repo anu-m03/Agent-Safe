@@ -5,9 +5,9 @@ import { recommendVote } from '../orchestrator/governanceRunner.js';
 export const governanceRouter = Router();
 
 // ─── GET /api/governance/proposals ──────────────────────
-governanceRouter.get('/proposals', (_req, res) => {
+governanceRouter.get('/proposals', async (_req, res) => {
   try {
-    const proposals = getProposals();
+    const proposals = await getProposals();
     res.json({ proposals });
   } catch (err) {
     console.error('[governance/proposals] error:', err);
@@ -16,8 +16,8 @@ governanceRouter.get('/proposals', (_req, res) => {
 });
 
 // ─── GET /api/governance/proposals/:id ──────────────────
-governanceRouter.get('/proposals/:id', (req, res) => {
-  const proposal = getProposalById(req.params.id);
+governanceRouter.get('/proposals/:id', async (req, res) => {
+  const proposal = await getProposalById(req.params.id);
   if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
   res.json(proposal);
 });

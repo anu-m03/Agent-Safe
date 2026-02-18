@@ -59,6 +59,12 @@ export interface ProposalSummary {
   choices: string[];
   snapshot?: string;
   url?: string;
+  source?: 'snapshot' | 'nouns';
+  state?: 'active' | 'closed' | 'pending' | string;
+  author?: string;
+  votes?: number;
+  scoresTotal?: number;
+  quorum?: number;
 }
 
 /** Vote recommendation */
