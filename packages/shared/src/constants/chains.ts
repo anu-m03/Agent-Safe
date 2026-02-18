@@ -12,14 +12,14 @@ export const CHAINS: Record<number, ChainConfig> = {
   8453: {
     chainId: 8453,
     name: 'Base',
-    rpc: process.env.QUICKNODE_RPC_URL ?? 'https://mainnet.base.org',
+    rpc: 'https://mainnet.base.org',
     explorer: 'https://basescan.org',
     isTestnet: false,
   },
   84532: {
     chainId: 84532,
     name: 'Base Sepolia',
-    rpc: process.env.QUICKNODE_RPC_URL ?? 'https://sepolia.base.org',
+    rpc: 'https://sepolia.base.org',
     explorer: 'https://sepolia.basescan.org',
     isTestnet: true,
   },

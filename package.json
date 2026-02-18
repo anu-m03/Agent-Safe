@@ -8,8 +8,11 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "test": "turbo run test",
     "clean": "turbo run clean",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "healthcheck": "npx tsx scripts/healthcheck.ts",
+    "test:integration": "npx tsx scripts/healthcheck.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

@@ -14,7 +14,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "lint": "echo 'lint: ok'"
+    "lint": "echo 'lint: ok'",
+    "test": "echo 'test: ok'"
   },
   "dependencies": {
     "zod": "^3.23.0"
