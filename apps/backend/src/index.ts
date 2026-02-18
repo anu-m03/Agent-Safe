@@ -19,10 +19,16 @@ app.use('/', healthRouter);
 app.use('/api/swarm', swarmRouter);
 app.use('/api/governance', governanceRouter);
 
+// ─── Status (quick liveness) ────────────────────────────
+app.get('/status', (_req, res) => {
+  res.json({ alive: true, uptime: process.uptime() });
+});
+
 // ─── Start ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🛡️  AgentSafe backend running on http://localhost:${PORT}`);
-  console.log(`   Health check: http://localhost:${PORT}/health`);
+  console.log(`   Health:  http://localhost:${PORT}/health`);
+  console.log(`   Status:  http://localhost:${PORT}/status`);
 });
 
 export default app;

@@ -45,3 +45,34 @@ export interface QueuedVote {
   executeAfter: string; // ISO-8601 – veto window end
   status: 'queued' | 'executed' | 'vetoed' | 'expired';
 }
+
+// ─── V2 Governance Types (deterministic orchestrator) ────
+
+/** Compact proposal summary for API consumers. */
+export interface ProposalSummary {
+  id: string;
+  title: string;
+  body: string;
+  space: string;
+  start: number;
+  end: number;
+  choices: string[];
+  snapshot?: string;
+  url?: string;
+}
+
+/** Vote recommendation */
+export type VoteRecommendation = 'FOR' | 'AGAINST' | 'ABSTAIN' | 'NO_ACTION';
+
+/** V2 vote intent produced by the governance pipeline. */
+export interface VoteIntent {
+  intentId: string;
+  proposalId: string;
+  space: string;
+  createdAt: number; // ms
+  recommendation: VoteRecommendation;
+  confidenceBps: number; // 0-10000
+  reasons: string[];
+  policyChecks: Record<string, unknown>;
+  meta: Record<string, unknown>;
+}
