@@ -31,3 +31,6 @@ export const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffff
 
 /** Snapshot Hub URL */
 export const SNAPSHOT_HUB_URL = 'https://hub.snapshot.org';
+
+// Contract addresses (placeholder until deployment)
+export { CONTRACT_ADDRESSES } from './contracts';
