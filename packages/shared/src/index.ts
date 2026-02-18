@@ -68,5 +68,40 @@ export {
 
 export { PolicyConfigSchema } from './schemas/policy';
 
+// ─── Schemas (V2 — used by orchestrator) ─────────────────
+export {
+  AgentTypeSchema,
+  SeveritySchema,
+  RecommendationSchema,
+  ConsensusDecisionSchema as ConsensusDecisionEnumSchema,
+  AgentRiskReportV2Schema,
+  SwarmConsensusDecisionV2Schema,
+} from './schemas/agentV2';
+
+export {
+  VoteRecommendationSchema,
+  ProposalSummarySchema,
+  VoteIntentSchema,
+} from './schemas/governanceV2';
+
+export {
+  ActionTypeSchema,
+  InputTxSchema,
+  ActionIntentSchema,
+  LogEventTypeSchema,
+  LogLevelSchema,
+  LogEventSchema,
+} from './schemas/intents';
+
+// ─── Validators ──────────────────────────────────────────
+export {
+  zAddress,
+  zBytes32,
+  zHexData,
+  zISOTimestamp,
+} from './schemas/validators';
+
 // Constants
 export * from './constants';
+export type { ChainConfig } from './constants/chains';
+export type { SponsorEntry } from './constants/sponsors';

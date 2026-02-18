@@ -34,3 +34,11 @@ export const SNAPSHOT_HUB_URL = 'https://hub.snapshot.org';
 
 // Contract addresses (placeholder until deployment)
 export { CONTRACT_ADDRESSES } from './contracts';
+
+// Chain configurations
+export { CHAINS, DEFAULT_CHAIN_ID } from './chains';
+export type { ChainConfig } from './chains';
+
+// Sponsor registry
+export { SPONSORS, getSponsor } from './sponsors';
+export type { SponsorEntry } from './sponsors';
