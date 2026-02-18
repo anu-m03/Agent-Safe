@@ -13,14 +13,17 @@
   },
   "dependencies": {
     "@agent-safe/shared": "workspace:*",
-    "express": "^4.21.0",
+    "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "openai": "^6.22.0",
+    "viem": "^2.46.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"

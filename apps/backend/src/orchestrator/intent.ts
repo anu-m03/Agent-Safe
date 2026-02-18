@@ -1,50 +1,35 @@
-import type {
-  SwarmConsensusDecisionV2,
-  ActionIntent,
-  ActionType,
-} from '@agent-safe/shared';
+import type { SwarmConsensusDecisionV2, ActionIntent } from '@agent-safe/shared';
 import crypto from 'node:crypto';
 
-/**
- * Build an ActionIntent from the consensus decision and the original tx.
- *
- * Mapping:
- *   ALLOW  => EXECUTE_TX
- *   BLOCK  => BLOCK_TX
- *   REVIEW_REQUIRED + HIGH/CRITICAL => REVOKE_APPROVAL
- *   REVIEW_REQUIRED otherwise       => NOOP
- */
 export function buildIntent(
   decision: SwarmConsensusDecisionV2,
-  tx: { chainId: number; to: string; value: string; data: string },
+  tx: { chainId?: number; to: string; value?: string; data?: string },
 ): ActionIntent {
-  let action: ActionType;
+
+  // ─── Map decision → action ─────────────────────────────
+  let action: ActionIntent['action'];
 
   switch (decision.decision) {
-    case 'ALLOW':
-      action = 'EXECUTE_TX';
-      break;
     case 'BLOCK':
       action = 'BLOCK_TX';
       break;
     case 'REVIEW_REQUIRED':
-      action =
-        decision.finalSeverity === 'HIGH' || decision.finalSeverity === 'CRITICAL'
-          ? 'REVOKE_APPROVAL'
-          : 'NOOP';
+      action = 'USE_PRIVATE_RELAY';
       break;
+    case 'ALLOW':
     default:
-      action = 'NOOP';
+      action = 'EXECUTE_TX';
+      break;
   }
 
   return {
     intentId: crypto.randomUUID(),
     runId: decision.runId,
     action,
-    chainId: tx.chainId,
+    chainId: tx.chainId ?? 8453,
     to: tx.to,
-    value: tx.value,
-    data: tx.data,
+    value: tx.value ?? '0',
+    data: tx.data ?? '0x',
     meta: {
       finalSeverity: decision.finalSeverity,
       finalRiskScore: decision.finalRiskScore,

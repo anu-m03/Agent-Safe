@@ -5,7 +5,7 @@
  */
 
 const KITE_API_KEY = process.env.KITE_API_KEY;
-const KITE_BASE_URL = process.env.KITE_BASE_URL || 'https://api.kite.ai/v1';
+const KITE_BASE_URL = process.env.KITE_BASE_URL ?? 'https://rpc-testnet.gokite.ai';
 
 function isConfigured(): boolean {
   return typeof KITE_API_KEY === 'string' && KITE_API_KEY.length > 0;
@@ -101,4 +101,27 @@ export function kiteHealthCheck(): {
     return { ok: true, mode: 'stub', detail: 'KITE_API_KEY not set — using deterministic stubs' };
   }
   return { ok: true, mode: 'live' };
+}
+
+export interface KiteAIResponse {
+  analysis: string;
+  riskScore: number;       // 0–100
+  confidence: number;      // 0–100
+  reasons: string[];
+  recommendation: 'ALLOW' | 'REVIEW' | 'BLOCK';
+}
+
+/**
+ * Query the LLM (OpenAI) for agent security analysis.
+ * Kite Chain is used for identity/provenance — not as an LLM provider.
+ * Falls back to heuristic result if no OPENAI_API_KEY is set.
+ */
+export async function queryKiteAI(
+  agentType: string,
+  prompt: string,
+  fallback: KiteAIResponse,
+): Promise<KiteAIResponse> {
+  const { analyseWithLLM } = await import('./llm.js');
+  const result = await analyseWithLLM(agentType, prompt, fallback);
+  return result;
 }

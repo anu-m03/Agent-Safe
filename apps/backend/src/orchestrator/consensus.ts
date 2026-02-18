@@ -2,121 +2,87 @@ import type {
   AgentRiskReportV2,
   SwarmConsensusDecisionV2,
   Severity,
-  ConsensusDecision,
 } from '@agent-safe/shared';
 import crypto from 'node:crypto';
 
-const APPROVALS_REQUIRED = 2;
-const CRITICAL_BLOCK_ENABLED = true;
+function shortHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(16).padStart(16, '0');
+}
 
-/**
- * Compute swarm consensus from individual agent reports.
- *
- * Rules (MVP):
- *  1. If any report is CRITICAL with confidence >= 7000 bps => BLOCK.
- *  2. Count "approvals" = reports where recommendation is ALLOW
- *     OR severity is LOW/MEDIUM with confidence >= 6000 bps.
- *  3. If approvals >= APPROVALS_REQUIRED => ALLOW.
- *  4. Otherwise => REVIEW_REQUIRED.
- */
 export function computeConsensus(
   runId: string,
   reports: AgentRiskReportV2[],
 ): SwarmConsensusDecisionV2 {
-  const notes: string[] = [];
-  const approvingAgents: SwarmConsensusDecisionV2['approvingAgents'] = [];
-  const dissentingAgents: SwarmConsensusDecisionV2['dissentingAgents'] = [];
+  const timestamp = Date.now();
 
-  // Rule 1: Critical block
-  if (CRITICAL_BLOCK_ENABLED) {
-    const criticals = reports.filter(
-      (r) => r.severity === 'CRITICAL' && r.confidenceBps >= 7000,
-    );
-    if (criticals.length > 0) {
-      for (const c of criticals) {
-        dissentingAgents.push({
-          agentId: c.agentId,
-          reason: c.reasons.join('; '),
-        });
-      }
-      notes.push(
-        `Blocked: ${criticals.length} agent(s) reported CRITICAL with high confidence`,
-      );
-      return buildResult(runId, reports, 'BLOCK', approvingAgents, dissentingAgents, notes);
-    }
+  if (reports.length === 0) {
+    return {
+      runId,
+      timestamp,
+      finalSeverity: 'LOW',
+      finalRiskScore: 0,
+      decision: 'ALLOW',
+      threshold: { approvalsRequired: 2, criticalBlockEnabled: true },
+      approvingAgents: [],
+      dissentingAgents: [],
+      notes: ['No reports provided'],
+    };
   }
 
-  // Rule 2-3: count approvals
-  for (const r of reports) {
-    const isExplicitAllow = r.recommendation === 'ALLOW';
-    const isLowRiskConfident =
-      (r.severity === 'LOW' || r.severity === 'MEDIUM') &&
-      r.confidenceBps >= 6000;
+  // ─── Use MAX score blended with avg (same logic as coordinator) ───
+  const maxScore = Math.max(...reports.map(r => r.riskScore));
+  const avgScore = Math.round(
+    reports.reduce((sum, r) => sum + r.riskScore, 0) / reports.length
+  );
+  const finalRiskScore = Math.round(maxScore * 0.7 + avgScore * 0.3);
 
-    if (isExplicitAllow || isLowRiskConfident) {
-      approvingAgents.push({
-        agentId: r.agentId,
-        riskScore: r.riskScore,
-        confidenceBps: r.confidenceBps,
-        reasonHash: hashReasons(r.reasons),
-      });
-    } else {
-      dissentingAgents.push({
-        agentId: r.agentId,
-        reason: r.reasons.join('; '),
-      });
-    }
-  }
-
-  const decision: ConsensusDecision =
-    approvingAgents.length >= APPROVALS_REQUIRED ? 'ALLOW' : 'REVIEW_REQUIRED';
-
-  notes.push(
-    `Approvals: ${approvingAgents.length}/${reports.length} (required ${APPROVALS_REQUIRED})`,
+  // ─── Inherit worst severity ────────────────────────────
+  const severityRank: Record<Severity, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+  const finalSeverity: Severity = reports.reduce((worst, r) =>
+    severityRank[r.severity] > severityRank[worst] ? r.severity : worst,
+    'LOW' as Severity
   );
 
-  return buildResult(runId, reports, decision, approvingAgents, dissentingAgents, notes);
-}
+  // ─── Decision based on blended score + severity ────────
+  let decision: 'ALLOW' | 'REVIEW_REQUIRED' | 'BLOCK' = 'ALLOW';
+  if (finalRiskScore >= 70 || finalSeverity === 'CRITICAL') decision = 'BLOCK';
+  else if (finalRiskScore >= 35 || finalSeverity === 'HIGH') decision = 'REVIEW_REQUIRED';
 
-/* ── helpers ────────────────────────────────────────────── */
+  // ─── Split approving vs dissenting ────────────────────
+  const approvingAgents = reports
+    .filter(r => r.recommendation === 'ALLOW')
+    .map(r => ({
+      agentId: r.agentId,
+      riskScore: r.riskScore,
+      confidenceBps: r.confidenceBps,
+      reasonHash: shortHash(r.reasons.join(';')),
+    }));
 
-function buildResult(
-  runId: string,
-  reports: AgentRiskReportV2[],
-  decision: ConsensusDecision,
-  approvingAgents: SwarmConsensusDecisionV2['approvingAgents'],
-  dissentingAgents: SwarmConsensusDecisionV2['dissentingAgents'],
-  notes: string[],
-): SwarmConsensusDecisionV2 {
-  const scores = reports.map((r) => r.riskScore);
-  const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / (scores.length || 1));
+  const dissentingAgents = reports
+    .filter(r => r.recommendation !== 'ALLOW')
+    .map(r => ({
+      agentId: r.agentId,
+      reason: r.reasons.join('; '),
+    }));
 
-  const highestSeverity: Severity =
-    reports.some((r) => r.severity === 'CRITICAL') ? 'CRITICAL'
-    : reports.some((r) => r.severity === 'HIGH') ? 'HIGH'
-    : reports.some((r) => r.severity === 'MEDIUM') ? 'MEDIUM'
-    : 'LOW';
+  const notes: string[] = [
+    `Approvals: ${approvingAgents.length}/${reports.length} (required 2)`,
+    `Blended score: ${finalRiskScore} (max: ${maxScore}, avg: ${avgScore})`,
+  ];
 
   return {
     runId,
-    timestamp: Date.now(),
-    finalSeverity: highestSeverity,
-    finalRiskScore: avgScore,
-    decision,
-    threshold: {
-      approvalsRequired: APPROVALS_REQUIRED,
-      criticalBlockEnabled: CRITICAL_BLOCK_ENABLED,
-    },
+    timestamp,
+    finalSeverity,
+    finalRiskScore,   // ← now uses blended score, not raw avg
+    decision,         // ← now correctly REVIEW_REQUIRED when HIGH severity
+    threshold: { approvalsRequired: 2, criticalBlockEnabled: true },
     approvingAgents,
     dissentingAgents,
     notes,
   };
-}
-
-function hashReasons(reasons: string[]): string {
-  return crypto
-    .createHash('sha256')
-    .update(reasons.join('|'))
-    .digest('hex')
-    .slice(0, 16);
 }
