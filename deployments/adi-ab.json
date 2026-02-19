@@ -1,0 +1,15 @@
+{
+  "network": "adi-ab-testnet",
+  "chainId": 99999,
+  "rpc": "https://rpc.ab.testnet.adifoundation.ai/",
+  "explorer": "https://explorer.ab.testnet.adifoundation.ai/",
+  "note": "Placeholder — run deploy script to populate with real addresses",
+  "AgentSafeAccount": "0x0000000000000000000000000000000000000000",
+  "PolicyEngine": "0x0000000000000000000000000000000000000000",
+  "ProvenanceRegistry": "0x0000000000000000000000000000000000000000",
+  "GovernanceExecutor": "0x0000000000000000000000000000000000000000",
+  "GovernanceModule": "0x0000000000000000000000000000000000000000",
+  "AgentRegistry": "0x0000000000000000000000000000000000000000",
+  "AgentBadgeNFT": "0x0000000000000000000000000000000000000000",
+  "EntryPoint": "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+}

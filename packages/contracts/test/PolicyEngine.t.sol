@@ -24,13 +24,13 @@ contract PolicyEngineTest is Test {
 
     function test_DefaultState() public view {
         assertEq(engine.maxValuePerTx(), 1 ether);
-        assertTrue(engine.blockMaxApproval());
+        assertEq(engine.dailyCap(), 5 ether);
         assertEq(engine.owner(), owner);
     }
 
     function test_AllowlistedTarget_NoData() public view {
-        // Without data, no selector check, passes
-        (bool allowed, ) = engine.validateCall(address(0), target, 0, "", false);
+        // Without data, no selector check, passes (using view checkCall)
+        (bool allowed, ) = engine.checkCall(address(0), target, 0, "", false);
         assertTrue(allowed);
     }
 
@@ -45,13 +45,13 @@ contract PolicyEngineTest is Test {
 
     function test_NotAllowlisted() public view {
         address unknown = address(0xBEEF);
-        (bool allowed, bytes32 reason) = engine.validateCall(address(0), unknown, 0, "", false);
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), unknown, 0, "", false);
         assertFalse(allowed);
         assertEq(reason, "NOT_ALLOWLISTED");
     }
 
     function test_ExceedsMaxValue() public view {
-        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 2 ether, "", false);
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), target, 2 ether, "", false);
         assertFalse(allowed);
         assertEq(reason, "EXCEEDS_MAX_VALUE");
     }
@@ -60,7 +60,7 @@ contract PolicyEngineTest is Test {
 
     function test_SelectorNotAllowed() public view {
         bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", address(0x1), 100);
-        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 0, data, false);
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), target, 0, data, false);
         assertFalse(allowed);
         assertEq(reason, "SELECTOR_NOT_ALLOWED");
     }
@@ -112,7 +112,7 @@ contract PolicyEngineTest is Test {
 
     function test_GovernanceMode_BlocksNonGovTarget() public view {
         bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", address(0x1), 100);
-        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 0, data, true);
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), target, 0, data, true);
         assertFalse(allowed);
         assertEq(reason, "GOV_MODE_RESTRICTED");
     }
@@ -127,6 +127,119 @@ contract PolicyEngineTest is Test {
         bytes memory data = abi.encodeWithSelector(castVoteSel, address(0x1), 1, 1);
         (bool allowed, ) = engine.validateCall(address(0), govModule, 0, data, true);
         assertTrue(allowed);
+    }
+
+    // ─── Rolling Daily Cap ───────────────────────────────
+
+    function test_RollingDailyCap() public {
+        vm.prank(owner);
+        engine.setDailyCap(3 ether);
+
+        vm.prank(owner);
+        engine.setMaxValuePerTx(3 ether);
+
+        // First spend: 2 ether
+        (bool allowed1, ) = engine.validateCall(address(0), target, 2 ether, "", false);
+        assertTrue(allowed1);
+        assertEq(engine.rollingDailySpend(), 2 ether);
+
+        // Second spend: 2 ether would push to 4, exceeding cap of 3
+        (bool allowed2, bytes32 reason) = engine.validateCall(address(0), target, 2 ether, "", false);
+        assertFalse(allowed2);
+        assertEq(reason, "EXCEEDS_DAILY_CAP");
+    }
+
+    function test_RollingDailyCapResetsAfter24h() public {
+        vm.prank(owner);
+        engine.setDailyCap(3 ether);
+
+        vm.prank(owner);
+        engine.setMaxValuePerTx(3 ether);
+
+        // Spend 2 ether
+        (bool allowed1, ) = engine.validateCall(address(0), target, 2 ether, "", false);
+        assertTrue(allowed1);
+
+        // Advance past 24 hours
+        vm.warp(block.timestamp + 25 hours);
+
+        // Should be able to spend again
+        (bool allowed2, ) = engine.validateCall(address(0), target, 2 ether, "", false);
+        assertTrue(allowed2);
+    }
+
+    // ─── Approval Caps ───────────────────────────────────
+
+    function test_ApprovalCapPerToken() public {
+        bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
+        vm.startPrank(owner);
+        engine.setAllowedSelector(target, approveSelector, true);
+        engine.setApprovalCapPerToken(target, 500);
+        vm.stopPrank();
+
+        // Under cap — should pass
+        bytes memory dataOk = abi.encodeWithSignature("approve(address,uint256)", address(0x1), uint256(400));
+        (bool allowed, ) = engine.validateCall(address(0), target, 0, dataOk, false);
+        assertTrue(allowed);
+
+        // Over cap — should fail
+        bytes memory dataBad = abi.encodeWithSignature("approve(address,uint256)", address(0x1), uint256(600));
+        (bool allowed2, bytes32 reason) = engine.validateCall(address(0), target, 0, dataBad, false);
+        assertFalse(allowed2);
+        assertEq(reason, "APPROVAL_TOKEN_CAP");
+    }
+
+    function test_ApprovalCapPerSpender() public {
+        address spender = address(0x5E4D);
+        bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
+        vm.startPrank(owner);
+        engine.setAllowedSelector(target, approveSelector, true);
+        engine.setApprovalCapPerSpender(spender, 200);
+        vm.stopPrank();
+
+        bytes memory dataBad = abi.encodeWithSignature("approve(address,uint256)", spender, uint256(300));
+        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 0, dataBad, false);
+        assertFalse(allowed);
+        assertEq(reason, "APPROVAL_SPENDER_CAP");
+    }
+
+    function test_ApprovalCapPerTokenSpender() public {
+        address spender = address(0x1);
+        bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
+        vm.startPrank(owner);
+        engine.setAllowedSelector(target, approveSelector, true);
+        engine.setApprovalCapPerTokenSpender(target, spender, 100);
+        vm.stopPrank();
+
+        bytes memory dataBad = abi.encodeWithSignature("approve(address,uint256)", spender, uint256(150));
+        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 0, dataBad, false);
+        assertFalse(allowed);
+        assertEq(reason, "APPROVAL_PAIR_CAP");
+    }
+
+    // ─── Governance Mode Extended ────────────────────────
+
+    function test_GovernanceMode_BlocksApprove() public {
+        vm.startPrank(owner);
+        engine.setGovernorAllowed(target, true);
+        bytes4 approveSelector = bytes4(keccak256("approve(address,uint256)"));
+        engine.setAllowedSelector(target, approveSelector, true);
+        vm.stopPrank();
+
+        bytes memory data = abi.encodeWithSignature("approve(address,uint256)", address(0x1), uint256(100));
+        (bool allowed, bytes32 reason) = engine.validateCall(address(0), target, 0, data, true);
+        assertFalse(allowed);
+        assertEq(reason, "GOV_APPROVE_FORBIDDEN");
+    }
+
+    function test_GovernanceMode_BlocksETHValue() public {
+        vm.startPrank(owner);
+        engine.setAllowlistedTarget(govModule, true);
+        vm.stopPrank();
+
+        (bool allowed, bytes32 reason) = engine.validateCall(address(0), govModule, 1 ether, "", true);
+        assertFalse(allowed);
+        assertEq(reason, "GOV_VALUE_FORBIDDEN");
     }
 
     // ─── Admin Access Control ────────────────────────────

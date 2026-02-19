@@ -499,7 +499,7 @@ contract AgentSafeAccountTest is Test {
         // handleOps should revert — the unsafe call causes entire batch to fail
         UserOperation[] memory ops = new UserOperation[](1);
         ops[0] = userOp;
-        vm.expectRevert("MockEntryPoint: execution failed");
+        vm.expectRevert("MockEntryPoint: validation failed");
         entryPoint.handleOps(ops, payable(owner));
 
         // Safe call must NOT have partially executed
