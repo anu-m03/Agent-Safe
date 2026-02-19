@@ -1,24 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { VoteIntent, ProposalSummary } from '@agent-safe/shared';
-import { recommendVote } from '@/services/backendClient';
+import {
+  recommendVote,
+  queueVote as apiQueueVote,
+  vetoVote as apiVetoVote,
+  executeVote as apiExecuteVote,
+} from '@/services/backendClient';
 
 interface ProposalCardProps {
   proposal: ProposalSummary;
+}
+
+type QueuedState = {
+  voteId: string;
+  executeAfter: number;
+  status: 'queued' | 'vetoed' | 'executed';
+  vetoed: boolean;
+  receipt?: string;
+  txHash?: string;
+};
+
+function recommendationToSupport(rec: string): number {
+  if (rec === 'FOR') return 1;
+  if (rec === 'AGAINST') return 0;
+  return 2; // ABSTAIN
 }
 
 export function ProposalCard({ proposal }: ProposalCardProps) {
   const [loading, setLoading] = useState(false);
   const [intent, setIntent] = useState<VoteIntent | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [autoVote, setAutoVote] = useState(false);
   const [vetoed, setVetoed] = useState(false);
+  const [queued, setQueued] = useState<QueuedState | null>(null);
+  const [executing, setExecuting] = useState(false);
+  const [vetoRemaining, setVetoRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!queued || queued.vetoed || queued.status === 'executed') return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((queued.executeAfter - Date.now()) / 1000));
+      setVetoRemaining(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [queued?.voteId, queued?.executeAfter, queued?.vetoed, queued?.status]);
 
   async function handleRecommend() {
     setLoading(true);
     setError(null);
     setVetoed(false);
+    setQueued(null);
     const res = await recommendVote(proposal.id);
     if (res.ok) {
       setIntent(res.data.intent ?? (res.data as unknown as VoteIntent));
@@ -28,9 +62,51 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
     setLoading(false);
   }
 
+  async function handleQueueVote() {
+    if (!intent) return;
+    setLoading(true);
+    setError(null);
+    const res = await apiQueueVote({
+      proposalId: proposal.id,
+      space: proposal.space,
+      support: recommendationToSupport(intent.recommendation),
+    });
+    setLoading(false);
+    if (res.ok && res.data) {
+      setQueued({
+        voteId: res.data.voteId,
+        executeAfter: res.data.executeAfter,
+        status: 'queued',
+        vetoed: false,
+      });
+    } else {
+      setError(res.error ?? 'Failed to queue vote');
+    }
+  }
+
   function handleVeto() {
     setVetoed(true);
-    setAutoVote(false);
+    if (!queued?.voteId) return;
+    apiVetoVote(queued.voteId).then((res) => {
+      if (res.ok && res.data) setQueued((q) => (q ? { ...q, vetoed: true, status: 'vetoed' } : null));
+    });
+  }
+
+  async function handleExecuteVote() {
+    if (!queued?.voteId || queued.vetoed || queued.status === 'executed') return;
+    if (vetoRemaining !== null && vetoRemaining > 0) return;
+    setExecuting(true);
+    setError(null);
+    const res = await apiExecuteVote(queued.voteId);
+    setExecuting(false);
+    if (res.ok && res.data && !('reason' in res.data)) {
+      setQueued((q) =>
+        q ? { ...q, status: 'executed', receipt: res.data.receipt, txHash: res.data.txHash } : null,
+      );
+    } else {
+      const reason = res.ok && res.data && 'reason' in res.data ? res.data.reason : res.error;
+      setError(reason ?? 'Execute failed');
+    }
   }
 
   const normalizeTimestampMs = (ts: number) => (ts > 1_000_000_000_000 ? ts : ts * 1000);
@@ -164,7 +240,7 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
       )}
 
       {/* VoteIntent display */}
-      {intent && !vetoed && (
+      {intent && (
         <div className="mt-4 space-y-3 rounded-xl border border-white/15 bg-black/35 p-4">
           <div className="flex items-center gap-3">
             <span className={`text-xl font-black ${recColor(intent.recommendation)}`}>
@@ -175,7 +251,6 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
             </span>
           </div>
 
-          {/* Reasons */}
           {intent.reasons.length > 0 && (
             <ul className="space-y-0.5">
               {intent.reasons.map((r, i) => (
@@ -186,47 +261,75 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
             </ul>
           )}
 
-          {/* Policy checks */}
           {Boolean(intent.policyChecks && Object.keys(intent.policyChecks).length > 0) && (
             <PolicyChecksDisplay checks={intent.policyChecks} />
           )}
 
-          {/* Summary from meta */}
           {typeof intent.meta?.summary === 'string' && (
             <p className="text-xs italic text-slate-300">
               {intent.meta.summary}
             </p>
           )}
 
-          {/* Auto-vote toggle + veto */}
-          <div className="flex items-center gap-4 border-t border-white/10 pt-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoVote}
-                onChange={(e) => setAutoVote(e.target.checked)}
-                className="accent-safe-blue"
-              />
-              <span className="text-xs text-slate-300">Auto-vote enabled</span>
-            </label>
-            <button
-              onClick={handleVeto}
-              className="rounded-lg border border-red-400/35 bg-red-500/10 px-3 py-1 text-xs font-semibold text-rose-300 transition hover:bg-red-500/20"
-            >
-              Human Veto
-            </button>
+          {/* Lifecycle: Queue → Veto window → Execute (never direct execute) */}
+          <div className="border-t border-white/10 pt-3">
+            {!queued && (
+              <button
+                onClick={handleQueueVote}
+                disabled={loading}
+                className="rounded-lg border border-emerald-400/35 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                {loading ? 'Queueing…' : 'Queue vote'}
+              </button>
+            )}
+
+            {queued && (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">
+                  Vote ID: <code className="font-mono">{queued.voteId.slice(0, 8)}…</code>
+                  {queued.status === 'queued' && vetoRemaining !== null && vetoRemaining > 0 && (
+                    <span className="ml-2 text-amber-300">
+                      Veto window: {Math.floor(vetoRemaining / 60)}m {vetoRemaining % 60}s
+                    </span>
+                  )}
+                  {queued.vetoed && <span className="ml-2 text-rose-400">Vetoed</span>}
+                  {queued.status === 'executed' && <span className="ml-2 text-emerald-400">Executed</span>}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleVeto}
+                    disabled={queued.vetoed || queued.status === 'executed'}
+                    className="rounded-lg border border-red-400/35 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 transition hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Veto
+                  </button>
+                  <button
+                    onClick={handleExecuteVote}
+                    disabled={
+                      executing ||
+                      queued.vetoed ||
+                      queued.status === 'executed' ||
+                      (vetoRemaining !== null && vetoRemaining > 0)
+                    }
+                    className="rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {executing ? 'Submitting…' : queued.status === 'executed' ? 'Executed' : 'Execute vote'}
+                  </button>
+                </div>
+                {queued.receipt && (
+                  <p className="text-xs text-emerald-300">
+                    Proof: <span className="font-mono break-all">{queued.receipt}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-          {autoVote && (
-            <p className="text-xs text-amber-300">
-              ⚠️ No on-chain voting without manual final click in MVP
-            </p>
-          )}
         </div>
       )}
 
-      {vetoed && (
+      {vetoed && !queued?.voteId && (
         <div className="mt-4 rounded-xl border border-red-400/35 bg-red-500/10 p-3 text-sm font-bold text-rose-300">
-          VETOED — recommendation cleared by human override.
+          Vetoed — vote was not queued or was vetoed.
         </div>
       )}
     </article>

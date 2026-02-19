@@ -60,3 +60,19 @@ export function readLatest(limit = 100): LogEvent[] {
 export function readByRunId(runId: string): LogEvent[] {
   return readLatest(10_000).filter((e) => e.runId === runId);
 }
+
+/** Read all log events (for analytics reproducibility). */
+export function readAllLogs(): LogEvent[] {
+  ensureDir();
+  if (!existsSync(LOG_FILE)) return [];
+  const lines = readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
+  const events: LogEvent[] = [];
+  for (const line of lines) {
+    try {
+      events.push(JSON.parse(line) as LogEvent);
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return events;
+}

@@ -15,13 +15,20 @@ export interface InputTx {
 
 /**
  * Action to take after SwarmGuard consensus.
+ * Includes legacy swarm mapping and rules-engine-only types.
  */
 export type ActionType =
   | 'EXECUTE_TX'
   | 'BLOCK_TX'
   | 'REVOKE_APPROVAL'
   | 'USE_PRIVATE_RELAY'
-  | 'NOOP';
+  | 'NOOP'
+  // Rules engine allowed outputs (deterministic mapping only)
+  | 'BLOCK_APPROVAL'
+  | 'QUEUE_GOVERNANCE_VOTE'
+  | 'LIQUIDATION_REPAY'
+  | 'LIQUIDATION_ADD_COLLATERAL'
+  | 'NO_ACTION';
 
 /**
  * Concrete intent produced by the SwarmGuard pipeline.
@@ -48,11 +55,20 @@ export type LogEventType =
   | 'INTENT'
   | 'GOVERNANCE_RECOMMEND'
   | 'GOVERNANCE_VOTE'
+  | 'GOVERNANCE_QUEUE'
+  | 'GOVERNANCE_VETO'
+  | 'GOVERNANCE_EXECUTE'
+  | 'GOVERNANCE_EXECUTE_FAIL'
   | 'HEALTH_CHECK'
   | 'REQUEST'
   | 'ERROR'
   | 'SWARM_START'
-  | 'SWARM_END';
+  | 'SWARM_END'
+  | 'RULES_ENGINE'
+  | 'PAYMENT_FALLBACK'
+  | 'EXECUTION_SUCCESS'
+  | 'X402_PAYMENT'
+  | 'REVENUE';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 

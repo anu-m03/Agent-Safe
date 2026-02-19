@@ -137,3 +137,115 @@ export function recommendVote(proposalId: string) {
     body: JSON.stringify({ proposalId }),
   });
 }
+
+// ─── Execution (ERC-4337 on Base) ─────────────────────────
+
+export interface ExecutionSuccessResponse {
+  ok: true;
+  userOpHash: string;
+  txHash: string;
+  gasUsed: string;
+  blockNumber: number;
+}
+
+export interface ExecutionFailureResponse {
+  ok: false;
+  reason: string;
+  code?: string;
+  details?: string;
+}
+
+export type ExecutionResponse = ExecutionSuccessResponse | ExecutionFailureResponse;
+
+export function executeOnBase(intent: ActionIntent) {
+  return request<ExecutionResponse>('/api/execute', {
+    method: 'POST',
+    body: JSON.stringify(intent),
+  });
+}
+
+export interface GasEstimateResponse {
+  ok: true;
+  callGasLimit: string;
+  estimatedTotal: string;
+}
+
+export function estimateExecutionGas(intent: ActionIntent) {
+  return request<GasEstimateResponse | { ok: false; reason: string }>('/api/execute/estimate', {
+    method: 'POST',
+    body: JSON.stringify(intent),
+  });
+}
+
+// ─── Governance lifecycle (queue → veto window → execute) ─
+
+export interface QueuedVoteResponse {
+  voteId: string;
+  proposalId: string;
+  space: string;
+  support: number;
+  rationaleHash?: string;
+  executeAfter: number;
+  vetoed: boolean;
+  status: 'queued' | 'vetoed' | 'executed';
+  txHash?: string;
+  receipt?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QueuedVotesListResponse {
+  votes: QueuedVoteResponse[];
+  vetoWindowSeconds: number;
+}
+
+export function getQueuedVotes() {
+  return request<QueuedVotesListResponse>('/api/governance/queuedVotes');
+}
+
+export function getQueuedVote(voteId: string) {
+  return request<QueuedVoteResponse & { canExecute: boolean; vetoWindowSeconds: number }>(
+    `/api/governance/queuedVotes/${encodeURIComponent(voteId)}`,
+  );
+}
+
+export function queueVote(params: {
+  proposalId: string;
+  space: string;
+  support: number;
+  rationaleHash?: string;
+}) {
+  return request<{
+    voteId: string;
+    proposalId: string;
+    space: string;
+    support: number;
+    executeAfter: number;
+    status: string;
+    vetoed: boolean;
+  }>('/api/governance/queueVote', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export function vetoVote(voteId: string) {
+  return request<{ voteId: string; status: string; vetoed: boolean }>('/api/governance/vetoVote', {
+    method: 'POST',
+    body: JSON.stringify({ voteId }),
+  });
+}
+
+export function executeVote(voteId: string) {
+  return request<{
+    ok: true;
+    voteId: string;
+    status: string;
+    txHash?: string;
+    receipt?: string;
+    vetoed: boolean;
+  } | { ok: false; reason: string; code?: string }>('/api/governance/executeVote', {
+    method: 'POST',
+    body: JSON.stringify({ voteId }),
+  });
+}

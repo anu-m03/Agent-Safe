@@ -2,27 +2,22 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import type { Metadata } from 'next';
 import './globals.css';
-
-const metadata: Metadata = {
-  title: 'AgentSafe – AI-Protected Smart Wallet',
-  description:
-    'ERC-4337 smart wallet on Base powered by SwarmGuard multi-agent defense and GovernanceSafe voting automation.',
-};
+import { Providers } from '@/components/Providers';
+import { ConnectButton } from '@/components/ConnectButton';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-
   const isActive = (path: string) => pathname === path;
 
   return (
     <html lang="en">
       <head>
-        <title>{String(metadata.title)}</title>
-        <meta name="description" content={metadata.description ?? ''} />
+        <title>AgentSafe – AI-Protected Smart Wallet</title>
+        <meta name="description" content="ERC-4337 smart wallet on Base powered by SwarmGuard and GovernanceSafe." />
       </head>
       <body className="min-h-screen bg-safe-dark text-gray-200 antialiased">
+        <Providers>
         <div className="flex min-h-screen flex-col lg:flex-row">
           <header className="sticky top-0 z-30 border-b border-white/10 bg-safe-dark/90 px-4 py-3 backdrop-blur lg:hidden">
             <div className="flex items-center justify-between">
@@ -70,8 +65,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/policies" active={isActive('/policies')}>Settings</NavLink>
             </nav>
 
-            {/* Status Indicator */}
-            <div className="absolute bottom-6 left-6 right-6">
+            {/* Wallet + Status */}
+            <div className="absolute bottom-6 left-6 right-6 space-y-3">
+              <ConnectButton />
               <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3">
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-300 shadow-lg shadow-emerald-400/50" />
@@ -86,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="animate-fadeIn mx-auto max-w-7xl">{children}</div>
           </main>
         </div>
+        </Providers>
       </body>
     </html>
   );

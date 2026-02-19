@@ -97,14 +97,49 @@ export async function snapshotHealthCheck(): Promise<{
   }
 }
 
+const SNAPSHOT_HUB_API = process.env.SNAPSHOT_HUB_API ?? 'https://hub.snapshot.org';
+
 /**
- * Cast a vote on Snapshot.
+ * Cast a vote on Snapshot (EIP-712 signed payload).
+ * Returns receipt (ipfs hash or vote id) on success.
  */
 export async function castSnapshotVote(
-  _space: string,
-  _proposalId: string,
-  _choice: number,
-): Promise<{ success: boolean; receipt?: string }> {
-  // TODO: Sign and submit vote via Snapshot API (EIP-712 signed payload)
-  return { success: false };
+  space: string,
+  proposalId: string,
+  choice: number, // 1-based index into proposal.choices
+  voterAddress: string,
+  signMessage: (message: string) => Promise<string>,
+): Promise<{ success: boolean; receipt?: string; error?: string }> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const payload = {
+    space,
+    proposal: proposalId,
+    choice,
+    reason: '',
+    app: 'agentsafe',
+    from: voterAddress,
+    timestamp,
+  };
+  const msg = JSON.stringify(payload);
+  try {
+    const sig = await signMessage(msg);
+    const res = await fetch(`${SNAPSHOT_HUB_API}/api/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: voterAddress,
+        msg,
+        sig,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `HTTP ${res.status}: ${text}` };
+    }
+    const data = (await res.json()) as { id?: string; [k: string]: unknown };
+    return { success: true, receipt: data.id ?? data.ipfs ?? JSON.stringify(data) };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
