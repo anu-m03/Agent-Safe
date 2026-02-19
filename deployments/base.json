@@ -1,0 +1,13 @@
+{
+  "chainId": 8453,
+  "name": "Base",
+  "rpcUrl": "https://mainnet.base.org",
+  "bundlerUrl": "https://paymaster.base.org/v2/8453",
+  "entryPoint": "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789",
+  "agentSafeAccount": "0x0000000000000000000000000000000000000000",
+  "policyEngine": "0x0000000000000000000000000000000000000000",
+  "provenanceRegistry": "0x0000000000000000000000000000000000000000",
+  "governanceExecutor": "0x0000000000000000000000000000000000000000",
+  "allowedTokens": [],
+  "allowedTargets": []
+}

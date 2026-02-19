@@ -100,6 +100,24 @@ export {
   LogEventSchema,
 } from './schemas/intents';
 
+// ─── Rules engine: evaluation inputs & log payload ───────
+export {
+  RulesEngineActionTypeSchema,
+  ApprovalEvaluationSchema,
+  GovernanceEvaluationSchema,
+  LiquidationEvaluationSchema,
+  EvaluationInputSchema,
+  RulesEngineLogPayloadSchema,
+} from './schemas/evaluation';
+export type {
+  RulesEngineActionType,
+  ApprovalEvaluation,
+  GovernanceEvaluation,
+  LiquidationEvaluation,
+  EvaluationInput,
+  RulesEngineLogPayload,
+} from './schemas/evaluation';
+
 // ─── Validators ──────────────────────────────────────────
 export {
   zAddress,

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { getProposals } from '@/services/backendClient';
 import { ProposalCard } from '@/components/ProposalCard';
+import { QueuedVotesList } from '@/components/QueuedVotesList';
 import type { ProposalSummary } from '@agent-safe/shared';
 
 /**
@@ -69,6 +70,8 @@ export default function GovernancePage() {
           Snapshot spaces included: Nouns + configured Snapshot feeds ({snapshotCount} Snapshot-origin proposals loaded).
         </p>
       </div>
+
+      <QueuedVotesList />
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="grid gap-3 md:grid-cols-5">

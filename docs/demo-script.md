@@ -1,6 +1,6 @@
 # AgentSafe Demo Script
 
-> Step-by-step walkthrough for ETHDenver judges (5–7 minutes).
+> End-to-end walkthrough for judges. **Total target: under 7 minutes.**
 
 ---
 
@@ -14,140 +14,134 @@ cd apps/backend && pnpm dev       # http://localhost:4000
 cd apps/web && pnpm dev           # http://localhost:3000
 ```
 
-Verify both are running:
+Verify both:
+
 ```bash
-curl http://localhost:4000/health | jq
+curl -s http://localhost:4000/status | jq
+# Expect: { "alive": true, "uptime": ..., "agents": [...], "logsCount": N, "runsCount": N }
+
+curl -s http://localhost:4000/health | jq '.status'
+# Expect: "ok" or "degraded"
 ```
 
 ---
 
-## Demo Flow (5–7 minutes)
+## Demo Flow (under 7 min)
+
+| Step | Duration | Focus |
+|------|----------|--------|
+| 1. Dashboard | 30s | Status, agents, runs |
+| 2. SwarmGuard Defense | 2 min | Tx evaluation, consensus, intent |
+| 3. Governance | 1.5 min | Proposals, AI recommendation, veto |
+| 4. Integrations Proof | 1.5 min | Base, QuickNode, Kite, Snapshot |
+| 5. Policy | 30s | Deterministic guardrails |
+| **Total** | **~6 min** | Buffer for Q&A |
+
+---
 
 ### Step 1: Dashboard Overview (30s)
 
 Open **http://localhost:3000/dashboard**
 
-**What to say:**
-> "This is AgentSafe — an ERC-4337 smart wallet on Base protected by SwarmGuard,
-> a multi-agent AI defense system. The dashboard shows real-time swarm status,
-> governance proposals, and integration health."
+**Say:**  
+"AgentSafe is an ERC-4337 smart wallet on Base with SwarmGuard — multi-agent AI defense. The dashboard shows swarm status, governance proposals, and integration health."
 
-Point out:
-- Swarm status (alive/agents online)
-- Proposals count
-- Sponsor integration summary
+**Point out:**
+- **Status** — `GET /status` returns `agents`, `logsCount`, `runsCount` (reproducible from logs).
+- Proposals count and sponsor integration summary.
 
 ---
 
-### Step 2: SwarmGuard Defense Demo (2 min) ⭐
+### Step 2: SwarmGuard Defense Demo (2 min)
 
-Navigate to **http://localhost:3000/defense**
+Go to **http://localhost:3000/defense**
 
-**What to say:**
-> "Let's see SwarmGuard in action. I'll submit a suspicious transaction —
-> an unlimited ERC-20 approval to an unknown contract."
+**Say:**  
+"We'll evaluate a suspicious transaction: an unlimited ERC-20 approval to an unknown contract."
 
-1. Fill in the form (defaults are pre-set for a suspicious approval):
+1. Use the form (defaults are pre-set):
    - Chain ID: `8453` (Base)
    - To: `0xdead000000000000000000000000000000000000`
    - Data: `0x095ea7b3` (approve selector)
    - Kind: APPROVAL
-2. Click **"Evaluate Transaction"**
-3. Wait for results (~1s)
+2. Click **"Evaluate Transaction"** (~1s).
+3. **Show:** Agent report timeline (Sentinel, Scam, MEV, Liquidation), severity/riskScore/confidence, **Consensus Card** (ALLOW/BLOCK/REVIEW), **Intent Card** (ActionIntent).
+4. Click **"Execute on Base"** — with backend configured, response includes `userOpHash`, `txHash`, `provenanceTxHashes` (real 0x… hashes when provenance is used). Otherwise simulated/MVP message.
 
-**What to show:**
-- Agent report timeline: Each agent (Sentinel, Scam Detector, MEV Watcher, Liquidation)
-  produces an independent risk assessment
-- Point out severity, riskScore, confidence, and reasons for each agent
-- Click "Evidence" to expand raw evidence JSON
-- Show the **Consensus Card**: ALLOW/BLOCK/REVIEW_REQUIRED with final severity
-- Show the **Intent Card**: The system produces an ActionIntent (EXECUTE_TX or BLOCK_TX)
-- Click **"Execute on Base"** → Shows "Simulated (MVP)" confirmation
+**Say:**  
+"Each agent signs its report. The consensus is recorded; on Base we submit approvals to ProvenanceRegistry before the UserOp, so execution returns real `userOpHash`, `txHash`, and `provenanceTxHashes`."
 
-**What to say about provenance:**
-> "Each agent signs its risk report independently. The consensus decision
-> is recorded as a provenance receipt — this maps directly to our
-> ProvenanceRegistry on Base. In production, the agent approval hash
-> is stored on-chain before any UserOp executes."
+**Real tx hashes:** When execution and provenance are configured, API response shape is:
 
----
-
-### Step 3: Governance Demo (1.5 min) ⭐
-
-Navigate to **http://localhost:3000/governance**
-
-**What to say:**
-> "GovernanceSafe monitors DAO proposals and provides AI-powered
-> risk analysis with policy checks."
-
-1. Point out the loaded proposals (fetched from backend)
-2. Click **"Get AI Recommendation"** on any proposal
-3. Show the VoteIntent result:
-   - Recommendation (FOR/AGAINST/ABSTAIN)
-   - Confidence percentage
-   - Reasons
-   - Policy checks (TREASURY_RISK, GOV_POWER_SHIFT, URGENCY_FLAG)
-4. Toggle **"Auto-vote enabled"** → Show the warning
-5. Click **"Human Veto"** → Shows VETOED state
-
-**What to say:**
-> "The system uses Kite AI for summarisation and a keyword policy engine
-> for risk checks. Auto-voting has a mandatory human veto window —
-> no on-chain vote executes without final human approval."
+```json
+{
+  "ok": true,
+  "userOpHash": "0x...",
+  "txHash": "0x...",
+  "gasUsed": "...",
+  "gasCostWei": "...",
+  "provenanceTxHashes": ["0x...", "0x..."],
+  "kiteOnlyProvenance": true
+}
+```
 
 ---
 
-### Step 4: Sponsor Proof Panel (1.5 min) ⭐⭐⭐
+### Step 3: Governance Demo (1.5 min)
 
-Navigate to **http://localhost:3000/integrations**
+Go to **http://localhost:3000/governance**
 
-**What to say:**
-> "Here's our integration proof panel. Each sponsor technology has
-> verifiable evidence."
+**Say:**  
+"GovernanceSafe monitors DAO proposals and provides AI risk analysis with policy checks."
 
-Walk through each section:
+1. Point out loaded proposals (from backend).
+2. Click **"Get AI Recommendation"** on a proposal.
+3. Show VoteIntent: recommendation (FOR/AGAINST/ABSTAIN), confidence, reasons, policy checks (TREASURY_RISK, GOV_POWER_SHIFT, URGENCY_FLAG).
+4. **Queue vote** → then **Human Veto** to show vetoed state.
 
-1. **Base** — Show chain ID 8453, deployed contract addresses
-   (AgentSafeAccount, PolicyEngine, GovernanceModule, ProvenanceRegistry)
-2. **QuickNode** — Show health check status, mode (live/disabled), blockNumber if available
-3. **Kite AI** — Show mode (live/stub), click "Run Kite Summary Test" to verify pipeline
-4. **Nouns / Proposals** — Show proposals loaded count + preview
-5. **0g** — Mention as stretch goal
-6. Expand "Raw Proof Data" to show raw `/health` and `/status` JSON
+**Say:**  
+"Kite AI does summarisation; keyword policy engine does risk checks. There is a mandatory human veto window — no on-chain vote without final approval."
+
+---
+
+### Step 4: Sponsor Proof Panel (1.5 min)
+
+Go to **http://localhost:3000/integrations**
+
+**Say:**  
+"Integration proof: each sponsor has verifiable evidence."
+
+1. **Base** — Chain ID 8453, AgentSafeAccount, PolicyEngine, GovernanceModule, ProvenanceRegistry.
+2. **QuickNode** — Health status, mode, block number when live.
+3. **Kite AI** — Mode (live/stub), "Run Kite Summary Test".
+4. **Nouns / Snapshot** — Proposals count and preview.
+5. Expand **Raw Proof Data** — show `/health` and `/status` JSON (including `agents`, `logsCount`, `runsCount`).
 
 ---
 
 ### Step 5: Policy Engine (30s)
 
-Navigate to **http://localhost:3000/policy**
+Go to **http://localhost:3000/policy**
 
-**What to say:**
-> "Policies are deterministic guardrails that AI agents cannot override.
-> They're enforced at three layers: server-side consensus, PolicyEngine.sol
-> on-chain, and ERC-4337 UserOp validation."
+**Say:**  
+"Policies are deterministic guardrails: server-side consensus, PolicyEngine on-chain, and ERC-4337 UserOp validation."
 
-Show:
-- Consensus rules (approvals required, critical block)
-- Policy simulator with mock agent reports
+Show consensus rules and policy simulator.
 
 ---
 
 ## Fallback: Backend Down
 
-If the backend is unreachable during the demo:
-
-1. All pages show friendly error banners (not crashes)
-2. Navigate to `/integrations` — shows ❌ Missing badges with clear explanations
-3. Point out the architecture: "The UI gracefully degrades — all API calls
-   have timeout handling and error states"
-4. Use `curl` to show static responses if backend recovers
+- Pages show error banners, no crashes.
+- **Integrations** shows missing badges and clear messages.
+- Use `curl` to show `/status` or `/health` when backend is back.
 
 ---
 
-## Key Technical Talking Points
+## Key Technical Points
 
-- **ERC-4337 Account Abstraction**: Smart wallet on Base with bundler-compatible UserOps
-- **Multi-Agent Consensus**: 4 specialist agents + coordinator, deterministic voting threshold
-- **Provenance Registry**: On-chain record of every swarm decision (agent hashes + final verdict)
-- **Policy Engine**: Immutable on-chain guardrails (spending limits, approval blocking, allowlists)
-- **GovernanceSafe**: Proposal parsing → AI risk analysis → VoteIntent → human veto → execution
+- **ERC-4337**: Smart wallet on Base, bundler-compatible UserOps.
+- **Multi-Agent Consensus**: Specialist agents + coordinator; threshold voting.
+- **Provenance**: On-chain approvals (ProvenanceRegistry); real `userOpHash` / `txHash` / `provenanceTxHashes` in API response.
+- **Policy Engine**: On-chain guardrails (allowlists, approval blocking).
+- **GovernanceSafe**: Proposals → AI risk → VoteIntent → human veto → optional execution.

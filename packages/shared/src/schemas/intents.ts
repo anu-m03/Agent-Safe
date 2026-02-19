@@ -3,7 +3,17 @@ import { z } from 'zod';
 // ─── Intent Zod Schemas ─────────────────────────────────
 
 export const ActionTypeSchema = z.enum([
-  'EXECUTE_TX', 'BLOCK_TX', 'REVOKE_APPROVAL', 'USE_PRIVATE_RELAY', 'NOOP',
+  'EXECUTE_TX',
+  'BLOCK_TX',
+  'REVOKE_APPROVAL',
+  'USE_PRIVATE_RELAY',
+  'NOOP',
+  // Rules engine allowed outputs (deterministic mapping only)
+  'BLOCK_APPROVAL',
+  'QUEUE_GOVERNANCE_VOTE',
+  'LIQUIDATION_REPAY',
+  'LIQUIDATION_ADD_COLLATERAL',
+  'NO_ACTION',
 ]);
 
 export const InputTxSchema = z.object({
@@ -30,8 +40,9 @@ export const ActionIntentSchema = z.object({
 
 export const LogEventTypeSchema = z.enum([
   'AGENT_REPORT', 'AGENT_REPORTS', 'CONSENSUS', 'INTENT',
-  'GOVERNANCE_RECOMMEND', 'GOVERNANCE_VOTE', 'HEALTH_CHECK',
+  'GOVERNANCE_RECOMMEND', 'GOVERNANCE_VOTE', 'GOVERNANCE_QUEUE', 'GOVERNANCE_VETO', 'GOVERNANCE_EXECUTE', 'GOVERNANCE_EXECUTE_FAIL', 'HEALTH_CHECK',
   'REQUEST', 'ERROR', 'SWARM_START', 'SWARM_END',
+  'RULES_ENGINE', 'PAYMENT_FALLBACK', 'EXECUTION_SUCCESS', 'X402_PAYMENT', 'REVENUE',
 ]);
 
 export const LogLevelSchema = z.enum(['INFO', 'WARN', 'ERROR']);

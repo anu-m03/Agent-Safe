@@ -1,15 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ActionIntent } from '@agent-safe/shared';
+import {
+  executeOnBase,
+  estimateExecutionGas,
+  type ExecutionSuccessResponse,
+  type ExecutionFailureResponse,
+} from '@/services/backendClient';
+import { ExecutionProof } from './ExecutionProof';
 
 interface IntentCardProps {
   intent: ActionIntent;
 }
 
 export function IntentCard({ intent }: IntentCardProps) {
-  const [simulated, setSimulated] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [gasEstimate, setGasEstimate] = useState<{ callGasLimit: string; estimatedTotal: string } | null>(null);
+  const [executionResult, setExecutionResult] = useState<ExecutionSuccessResponse | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    estimateExecutionGas(intent).then((res) => {
+      if (cancelled || !res.ok) return;
+      setGasEstimate({ callGasLimit: res.callGasLimit, estimatedTotal: res.estimatedTotal });
+    });
+    return () => { cancelled = true; };
+  }, [intent.intentId]);
 
   const meta = intent.meta as Record<string, unknown> | undefined;
   const reason = meta?.reason as string | undefined;
@@ -17,9 +36,25 @@ export function IntentCard({ intent }: IntentCardProps) {
   const severity = meta?.severity as string | undefined;
   const recommendedBy = meta?.recommendedBy as string[] | undefined;
 
-  function handleExecute() {
-    setSimulated(true);
-    setTimeout(() => setSimulated(false), 3000);
+  const isExecutable =
+    intent.action === 'REVOKE_APPROVAL' ||
+    intent.action === 'EXECUTE_TX' ||
+    intent.action === 'LIQUIDATION_REPAY' ||
+    intent.action === 'LIQUIDATION_ADD_COLLATERAL';
+
+  async function handleExecute() {
+    setExecuting(true);
+    setExecutionError(null);
+    setExecutionResult(null);
+    const res = await executeOnBase(intent);
+    setExecuting(false);
+    if (res.ok && res.data && 'userOpHash' in res.data) {
+      setExecutionResult(res.data as ExecutionSuccessResponse);
+      setExecutionError(null);
+    } else {
+      setExecutionResult(null);
+      setExecutionError(res.ok && res.data && 'reason' in res.data ? (res.data as ExecutionFailureResponse).reason : res.error ?? 'Execution failed');
+    }
   }
 
   async function handleCopy() {
@@ -28,7 +63,6 @@ export function IntentCard({ intent }: IntentCardProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
       const ta = document.createElement('textarea');
       ta.value = JSON.stringify(intent, null, 2);
       document.body.appendChild(ta);
@@ -55,6 +89,9 @@ export function IntentCard({ intent }: IntentCardProps) {
         <Row label="To" value={truncate(intent.to, 16)} full={intent.to} />
         <Row label="Value" value={intent.value} />
         <Row label="Data" value={truncate(intent.data, 16)} full={intent.data} />
+        {gasEstimate && (
+          <Row label="Est. gas" value={gasEstimate.estimatedTotal} />
+        )}
         {reason && <Row label="Reason" value={reason} />}
         {riskScore !== undefined && (
           <Row label="Risk Score" value={`${riskScore}/100`} />
@@ -88,17 +125,21 @@ export function IntentCard({ intent }: IntentCardProps) {
         </div>
       )}
 
-      {/* Buttons */}
       <div className="mt-4 flex gap-3">
         <button
           onClick={handleExecute}
+          disabled={executing || !isExecutable}
           className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-            simulated
-              ? 'bg-safe-green/20 text-safe-green border border-green-800'
-              : 'bg-safe-blue/20 text-safe-blue border border-blue-800 hover:bg-safe-blue/30'
+            executionResult
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              : executing
+                ? 'bg-gray-600 text-gray-400 border border-gray-600 cursor-wait'
+                : isExecutable
+                  ? 'bg-safe-blue/20 text-safe-blue border border-blue-800 hover:bg-safe-blue/30'
+                  : 'bg-gray-700 text-gray-500 border border-gray-700 cursor-not-allowed'
           }`}
         >
-          {simulated ? '✓ Simulated (MVP)' : 'Execute on Base'}
+          {executing ? 'Submitting…' : executionResult ? '✓ Executed' : 'Execute on Base'}
         </button>
         <button
           onClick={handleCopy}
@@ -108,11 +149,13 @@ export function IntentCard({ intent }: IntentCardProps) {
         </button>
       </div>
 
-      {simulated && (
-        <div className="mt-3 rounded-lg border border-green-800 bg-green-900/20 p-3 text-xs text-safe-green">
-          Execution simulated — EXECUTE_SIMULATED logged locally. In production this would submit to Base via ERC-4337 bundler.
+      {executionError && (
+        <div className="mt-3 rounded-lg border border-red-800 bg-red-900/20 p-3 text-sm text-red-300">
+          {executionError}
         </div>
       )}
+
+      {executionResult && <ExecutionProof result={executionResult} />}
     </div>
   );
 }
