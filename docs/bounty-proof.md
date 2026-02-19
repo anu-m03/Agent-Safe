@@ -39,7 +39,7 @@ ls out/
 ```
 
 ### UI Proof
-- **Dashboard** (`/dashboard`): Shows Base chain ID, contract addresses, status (agents, logsCount, runsCount)
+- **Dashboard** (`/dashboard`): Shows Base chain ID and contract addresses
 - **Integrations** (`/integrations`): Base section with deployed addresses and chain ID badge
 
 ---
@@ -58,7 +58,7 @@ whether a QuickNode endpoint is configured and falls back to public RPC.
 | RPC service | `apps/backend/src/services/rpc/` |
 | Chain constants (RPC URLs) | `packages/shared/src/constants/chains.ts` |
 | Health endpoint | `GET /health` → `integrations.quicknode` |
-| Backend env example | `apps/backend/.env.example` (grouped; QUICKNODE_RPC_URL, execution, provenance, x402, streams) |
+| Backend env example | `apps/backend/.env.example` (QUICKNODE_RPC_URL) |
 
 ### Verification Commands
 ```bash
@@ -175,30 +175,12 @@ next milestone post-hackathon.
 
 ## Cross-Cutting Proof
 
-### Backend API (key endpoints)
-- **GET /status** — Liveness + `agents`, `logsCount`, `runsCount`.
-- **GET /health** — QuickNode, Kite, Snapshot integration status.
-- **POST /api/execute** — ActionIntent → ERC-4337 UserOp; returns `userOpHash`, `txHash`, `gasUsed`, `gasCostWei`, `provenanceTxHashes`, optional `kiteOnlyProvenance`.
-- **GET /api/payments** — x402 payment records (proposal summarise, risk classification, tx simulation).
-- **GET /api/scenes/:proposalId** — Spatial governance scene (risk markers, summary nodes, rationale anchors, sceneHash).
-- **GET /api/analytics/summary** — Self-funding metrics (gasSpentWei, x402SpendWei, revenueWei, actionsPerDay, costPerActionWei, netRunwayWei); all from logs.
-
-### Status & Health
-```bash
-# Quick liveness + demo metrics (agents, logsCount, runsCount)
-curl -s http://localhost:4000/status | jq
-# { "alive": true, "uptime": N, "agents": ["SENTINEL","SCAM","MEV","LIQUIDATION","COORDINATOR"], "logsCount": N, "runsCount": N }
-
-# Full health (QuickNode, Kite, Snapshot)
-curl -s http://localhost:4000/health | jq
-```
-
 ### Integration Health Harness
 ```bash
 # Start backend first, then run:
 pnpm healthcheck
 
-# Validates API endpoints against Zod schemas
+# Validates all 6 API endpoints against Zod schemas
 # Exit code 0 = all pass, non-zero = failures
 ```
 
@@ -241,19 +223,14 @@ pnpm test        # Runs test scripts (includes build)
                    └───────────────────────────────┘
 ```
 
-### Demo (under 7 minutes)
-- See **docs/demo-script.md** for step-by-step flow (Dashboard → Defense → Governance → Integrations → Policy).
-- Execution response includes real `userOpHash`, `txHash`, `provenanceTxHashes` when configured.
-
 ### Screenshots Checklist (For Submission)
-- [ ] Dashboard with swarm status (agents, logsCount, runsCount)
+- [ ] Dashboard with swarm status
 - [ ] Defense page: suspicious tx evaluation with agent reports
-- [ ] Defense page: consensus result; Execute on Base (real or simulated tx hashes)
+- [ ] Defense page: consensus BLOCK_TX result
 - [ ] Governance page: proposal cards loaded
 - [ ] Governance page: AI recommendation with policy checks
 - [ ] Governance page: human veto applied
 - [ ] Integrations page: all sponsor sections with badges
 - [ ] Integrations page: raw health/status JSON expanded
-- [ ] Terminal: `curl /status` showing agents, logsCount, runsCount
 - [ ] Terminal: `pnpm healthcheck` all green
 - [ ] Terminal: `forge test -vvv` all passing
