@@ -36,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <MobileNavLink href="/dashboard" active={isActive('/dashboard')}>Dashboard</MobileNavLink>
               <MobileNavLink href="/defense" active={isActive('/defense')}>Defense</MobileNavLink>
               <MobileNavLink href="/governance" active={isActive('/governance')}>Governance</MobileNavLink>
+              <MobileNavLink href="/spatial-atlas" active={isActive('/spatial-atlas')}>Spatial Atlas</MobileNavLink>
               <MobileNavLink href="/policy" active={isActive('/policy')}>Policy</MobileNavLink>
               <MobileNavLink href="/integrations" active={isActive('/integrations')}>Integrations</MobileNavLink>
             </nav>
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/dashboard" active={isActive('/dashboard')}>Dashboard</NavLink>
               <NavLink href="/defense" active={isActive('/defense')}>Defense</NavLink>
               <NavLink href="/governance" active={isActive('/governance')}>Governance</NavLink>
+              <NavLink href="/spatial-atlas" active={isActive('/spatial-atlas')}>Spatial Atlas</NavLink>
               <NavLink href="/policy" active={isActive('/policy')}>Policy</NavLink>
               <NavLink href="/integrations" active={isActive('/integrations')}>Integrations</NavLink>
 

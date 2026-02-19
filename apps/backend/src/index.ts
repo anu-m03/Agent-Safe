@@ -4,6 +4,7 @@ import cors from 'cors';
 import { healthRouter } from './routes/health.js';
 import { swarmRouter } from './routes/swarm.js';
 import { governanceRouter } from './routes/governance.js';
+import { spatialRouter } from './routes/spatial.js';
 import { requestLogger } from './middleware/logger.js';
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(requestLogger);
 app.use('/', healthRouter);
 app.use('/api/swarm', swarmRouter);
 app.use('/api/governance', governanceRouter);
+app.use('/api/governance', spatialRouter);
 
 // ─── Status (quick liveness) ────────────────────────────
 app.get('/status', (_req, res) => {

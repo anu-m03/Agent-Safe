@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { VoteIntent, ProposalSummary } from '@agent-safe/shared';
 import { recommendVote } from '@/services/backendClient';
+import { SpatialPanel } from '@/components/SpatialPanel';
 
 interface ProposalCardProps {
   proposal: ProposalSummary;
@@ -229,6 +230,9 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
           VETOED — recommendation cleared by human override.
         </div>
       )}
+
+      {/* Spatial Memory Panel — Blockade Labs integration */}
+      <SpatialPanel proposalId={proposal.id} />
     </article>
   );
 }

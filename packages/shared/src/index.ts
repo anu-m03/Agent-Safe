@@ -32,6 +32,13 @@ export type { PolicyConfig } from './types/policy';
 export { DEFAULT_POLICY } from './types/policy';
 
 export type {
+  AgentMarker,
+  DetectedZone,
+  SpatialMemory,
+  SpatialAtlasResponse,
+} from './types/spatial';
+
+export type {
   InputTx,
   ActionType,
   ActionIntent,

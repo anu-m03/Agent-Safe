@@ -52,7 +52,8 @@ export type LogEventType =
   | 'REQUEST'
   | 'ERROR'
   | 'SWARM_START'
-  | 'SWARM_END';
+  | 'SWARM_END'
+  | 'SPATIAL_GENERATION';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 
