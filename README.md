@@ -76,6 +76,7 @@ canonical Zod schemas. Exit code 0 = all pass.
 | **QuickNode** | RPC for live block data, tx simulation | ✅ Live when `QUICKNODE_RPC_URL` set |
 | **Kite AI** | Proposal summarisation, scam NLP | ✅ Live when `KITE_API_KEY` set, stubs otherwise |
 | **Nouns / Snapshot** | Governance proposal ingestion + vote pipeline | ✅ Mock proposals + AI risk analysis |
+| **Blockade Labs** | Skybox AI 360° spatial environments for proposals | ✅ Live when `BLOCKADE_API_KEY` set, stubs otherwise |
 | **0g** | Decentralised storage for provenance receipts | 🟡 Stub / planned |
 
 See [docs/bounty-proof.md](docs/bounty-proof.md) for full sponsor evidence and
@@ -88,6 +89,7 @@ See [docs/bounty-proof.md](docs/bounty-proof.md) for full sponsor evidence and
 | `/dashboard` | System overview — swarm status, proposals, integrations |
 | `/defense` | Evaluate transactions through SwarmGuard |
 | `/governance` | View proposals, get AI recommendations, veto |
+| `/spatial-atlas` | Navigate 360° spatial environments for proposals (Blockade Labs) |
 | `/policy` | Policy rules display + consensus simulator |
 | `/integrations` | Sponsor proof panel with live/stub badges |
 
@@ -95,6 +97,42 @@ See [docs/bounty-proof.md](docs/bounty-proof.md) for full sponsor evidence and
 
 - [Demo Script](docs/demo-script.md) — Step-by-step for judges
 - [Bounty Proof](docs/bounty-proof.md) — Sponsor-by-sponsor evidence
+
+## Blockade Labs — Spatial Governance
+
+AgentSafe integrates with the **Blockade Labs Skybox AI** API to generate 360° spatial environments that visualise governance proposals as explorable spaces.
+
+### How It Works
+
+1. **Generate** — On any governance proposal, click "Generate Proposal Space". This builds a skybox prompt mapping proposal risk domains to spatial zones (Governance Chamber, Treasury Vault, Approval Terminal, Liquidation Corridor).
+2. **Spatial Reasoning** — After the skybox is generated, an LLM (Gemini) or keyword heuristic analyses the proposal and produces structured zone detections + multi-agent severity markers.
+3. **Spatial Memory** — Each generated space is persisted as a JSON file in `apps/backend/data/spatial-memory/{proposalId}.json`, including a keccak-equivalent scene hash for integrity.
+4. **Atlas Navigation** — The `/spatial-atlas` page lists all generated environments with thumbnails, recommendations, severity filters, and scene hashes. Click any card to expand details or open the 360° environment.
+5. **Multi-Agent Markers** — Each zone shows which agents (Sentinel, ScamDetector, MEVWatcher, LiquidationPredictor, Coordinator) are monitoring it and their severity assessment.
+
+### Setup
+
+```bash
+# Get your API key from https://api.blockadelabs.com
+# Add to .env
+BLOCKADE_API_KEY=your_key_here
+
+# Without the key, the system uses placeholder stubs for demo purposes.
+```
+
+### Spatial Memory Files
+
+Stored at: `apps/backend/data/spatial-memory/<proposalId>.json`
+
+Each file contains: `proposalId`, `sceneId`, `sceneHash`, `prompt`, `fileUrl`, `thumbUrl`, `agentMarkers[]`, `detectedZones[]`, `spatialSummary`, `voteRecommendation`, `confidence`, `status`.
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/governance/proposals/:id/space` | Generate a 360° spatial environment for a proposal |
+| GET | `/api/governance/proposals/:id/space` | Retrieve stored spatial memory |
+| GET | `/api/governance/spatial-atlas` | List all generated environments |
 
 ## License
 

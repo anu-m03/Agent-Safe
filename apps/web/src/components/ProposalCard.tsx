@@ -8,6 +8,7 @@ import {
   vetoVote as apiVetoVote,
   executeVote as apiExecuteVote,
 } from '@/services/backendClient';
+import { SpatialPanel } from '@/components/SpatialPanel';
 
 interface ProposalCardProps {
   proposal: ProposalSummary;
@@ -332,6 +333,9 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
           Vetoed — vote was not queued or was vetoed.
         </div>
       )}
+
+      {/* Spatial Memory Panel — Blockade Labs integration */}
+      <SpatialPanel proposalId={proposal.id} />
     </article>
   );
 }

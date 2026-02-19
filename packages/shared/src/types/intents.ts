@@ -69,6 +69,7 @@ export type LogEventType =
   | 'EXECUTION_SUCCESS'
   | 'X402_PAYMENT'
   | 'REVENUE';
+  | 'SPATIAL_GENERATION';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 

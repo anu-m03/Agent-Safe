@@ -9,6 +9,7 @@ import { streamsRouter } from './routes/streams.js';
 import { paymentsRouter } from './routes/payments.js';
 import { scenesRouter } from './routes/scenes.js';
 import { analyticsRouter } from './routes/analytics.js';
+import { spatialRouter } from './routes/spatial.js';
 import { requestLogger } from './middleware/logger.js';
 import { readAllLogs } from './storage/logStore.js';
 
@@ -32,6 +33,7 @@ app.use('/api/streams', streamsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/scenes', scenesRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/governance', spatialRouter);
 
 // ─── Status (quick liveness + demo metrics) ──────────────
 app.get('/status', (_req, res) => {

@@ -12,6 +12,14 @@ interface IPolicyEngine {
         uint256 value,
         bytes calldata data,
         bool governanceMode
+    ) external returns (bool allowed, bytes32 reason);
+
+    function checkCall(
+        address account,
+        address target,
+        uint256 value,
+        bytes calldata data,
+        bool governanceMode
     ) external view returns (bool allowed, bytes32 reason);
 }
 
@@ -121,7 +129,8 @@ contract AgentSafeAccount {
     /**
      * @notice Validates a UserOperation per ERC-4337.
      * @dev Called by EntryPoint before execution.
-     *      Validates: signature, policy, provenance consensus.
+     *      Validates: signature, policy (view check), provenance consensus.
+     *      Batch calls are validated per-call.
      */
     function validateUserOp(
         UserOperation calldata userOp,
@@ -136,7 +145,7 @@ contract AgentSafeAccount {
             return 1; // SIG_VALIDATION_FAILED
         }
 
-        // 2. Decode calldata and validate via policy engine
+        // 2. Decode calldata and validate via policy engine (view check — no state mutation)
         if (address(policyEngine) != address(0) && userOp.callData.length >= 4) {
             bytes4 outerSelector = bytes4(userOp.callData[:4]);
 
@@ -146,9 +155,27 @@ contract AgentSafeAccount {
                     abi.decode(userOp.callData[4:], (address, uint256, bytes));
 
                 (bool allowed, ) =
-                    policyEngine.validateCall(address(this), target, value, data, governanceMode);
+                    policyEngine.checkCall(address(this), target, value, data, governanceMode);
                 if (!allowed) {
                     return 1; // POLICY_BLOCKED
+                }
+            }
+
+            // If calling executeBatch(address[],uint256[],bytes[])
+            if (outerSelector == this.executeBatch.selector && userOp.callData.length >= 68) {
+                (address[] memory targets, uint256[] memory values, bytes[] memory datas) =
+                    abi.decode(userOp.callData[4:], (address[], uint256[], bytes[]));
+
+                if (targets.length != values.length || values.length != datas.length) {
+                    return 1; // BATCH_LENGTH_MISMATCH
+                }
+
+                for (uint256 i = 0; i < targets.length; i++) {
+                    (bool allowed, ) =
+                        policyEngine.checkCall(address(this), targets[i], values[i], datas[i], governanceMode);
+                    if (!allowed) {
+                        return 1; // POLICY_BLOCKED_BATCH
+                    }
                 }
             }
         }

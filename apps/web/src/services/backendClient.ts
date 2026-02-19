@@ -10,6 +10,8 @@ import type {
   AgentRiskReportV2,
   VoteIntent,
   ProposalSummary,
+  SpatialMemory,
+  SpatialAtlasResponse,
 } from '@agent-safe/shared';
 
 const BASE_URL =
@@ -248,4 +250,18 @@ export function executeVote(voteId: string) {
     method: 'POST',
     body: JSON.stringify({ voteId }),
   });
+// ─── Spatial (Blockade Labs) ─────────────────────────────
+
+export function generateProposalSpace(proposalId: string) {
+  return request<SpatialMemory>(`/api/governance/proposals/${encodeURIComponent(proposalId)}/space`, {
+    method: 'POST',
+  });
+}
+
+export function getProposalSpace(proposalId: string) {
+  return request<SpatialMemory>(`/api/governance/proposals/${encodeURIComponent(proposalId)}/space`);
+}
+
+export function getSpatialAtlas() {
+  return request<SpatialAtlasResponse>('/api/governance/spatial-atlas');
 }
