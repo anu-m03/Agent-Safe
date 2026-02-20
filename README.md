@@ -64,7 +64,7 @@ canonical Zod schemas. Exit code 0 = all pass.
 ## Architecture
 
 - **AgentSafe Wallet** – ERC-4337 account abstraction wallet on Base
-- **SwarmGuard** – Multi-agent defense system (Sentinel, MEV Watcher, Liquidation Predictor, Scam Detector, Coordinator, Defender)
+- **SwarmGuard** – Multi-agent defense system (Sentinel, Scam Detector, Liquidation Predictor, Coordinator, Defender)
 - **GovernanceSafe** – Proposal parser, risk analysis, vote recommendation, execution with human veto
 - **Policy Engine** – On-chain deterministic guardrails that AI cannot override
 
@@ -108,7 +108,7 @@ AgentSafe integrates with the **Blockade Labs Skybox AI** API to generate 360° 
 2. **Spatial Reasoning** — After the skybox is generated, an LLM (Gemini) or keyword heuristic analyses the proposal and produces structured zone detections + multi-agent severity markers.
 3. **Spatial Memory** — Each generated space is persisted as a JSON file in `apps/backend/data/spatial-memory/{proposalId}.json`, including a keccak-equivalent scene hash for integrity.
 4. **Atlas Navigation** — The `/spatial-atlas` page lists all generated environments with thumbnails, recommendations, severity filters, and scene hashes. Click any card to expand details or open the 360° environment.
-5. **Multi-Agent Markers** — Each zone shows which agents (Sentinel, ScamDetector, MEVWatcher, LiquidationPredictor, Coordinator) are monitoring it and their severity assessment.
+5. **Multi-Agent Markers** — Each zone shows which agents (Sentinel, ScamDetector, LiquidationPredictor, Coordinator) are monitoring it and their severity assessment.
 
 ### Setup
 

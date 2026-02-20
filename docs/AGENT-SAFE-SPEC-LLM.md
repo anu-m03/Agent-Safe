@@ -24,18 +24,19 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 
 - **Done:** CORS, JSON body parser, request logger.
 - **Done:** `GET /health` — Returns `status`, `uptime`, `service`, `timestamp`, `version`, and `services` / `integrations`: `quicknode`, `kiteAi`, `snapshot`. Each has `ok`, `mode` (live/stub/disabled), and optional `detail` / `blockNumber`. Health is "ok" if none report `ok === false`.
-- **Done:** `GET /status` — Returns only `{ alive: true, uptime: process.uptime() }`. No `agents`, `logsCount`, or `runsCount` (frontend expects these and shows "—" when missing).
+- **Done:** `GET /status` — Returns `{ alive: true, uptime, agents, logsCount, runsCount }` (agents list, log count, swarm run count from logStore).
 - **Done:** `POST /api/swarm/evaluate-tx` — Accepts `InputTx` (chainId, from, to, data, value, kind, metadata). Runs full SwarmGuard pipeline; returns `runId`, `reports[]`, `decision` (SwarmConsensusDecisionV2), `intent` (ActionIntent), `provenance[]`.
 - **Done:** `GET /api/swarm/logs` — Query params: `runId` (optional), `limit` (default 100). Returns `{ logs: LogEvent[] }` from file-based log store (`.data/logs.jsonl`).
 - **Done:** `GET /api/governance/proposals` — Returns `{ proposals: Proposal[] }`. Proposals come from Snapshot (live) with 60s cache, or fallback to `mockProposals.json` (3 static proposals).
 - **Done:** `GET /api/governance/proposals/:id` — Returns single proposal or 404.
 - **Done:** `POST /api/governance/recommend` — Body: `{ proposalId }`. Returns `VoteIntent` (recommendation, confidenceBps, reasons, policyChecks, meta.summary) or 404.
+- **Done:** `POST /api/marketplace/request-protection` — Body: `paymentTxHash`, `actionType` (PROPOSAL_SUMMARISE | RISK_CLASSIFICATION | TX_SIMULATION), plus action-specific params. Verifies USDC payment on Base (RPC), runs paid action in context, logs REVENUE. Returns 402 with operator wallet and required amount when payment missing/invalid; 400 on replay (usedPayments).
 
 ### 2.3 SwarmGuard pipeline (orchestrator)
 
 - **Done:** `runSwarm(tx)` in `apps/backend/src/orchestrator/swarmRunner.ts`:
   1. Generate `runId` (UUID).
-  2. Run four specialist agents **sequentially**: Sentinel → Scam Detector → MEV Watcher → Liquidation Predictor.
+  2. Run three specialist agents **sequentially**: Sentinel → Scam Detector → Liquidation Predictor.
   3. Run Coordinator with the four reports (aggregates scores, severity, recommendation).
   4. Compute consensus (blended risk score, worst severity, ALLOW/REVIEW_REQUIRED/BLOCK).
   5. Build `ActionIntent` (EXECUTE_TX, USE_PRIVATE_RELAY, or BLOCK_TX).
@@ -50,7 +51,7 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 
 - **Sentinel** (`agents/sentinel.ts`): Zero-address target, high value + no data, ERC-20 `approve` / `setApprovalForAll` selectors, unlimited approval (MAX_UINT in calldata). Heuristic score 0–100; then optional LLM enrichment via `queryKiteAI` (see LLM/Kite below).
 - **Scam Detector** (`agents/scamDetector.ts`): Calls `getContractInfo(tx.to)` from Kitescan API (contract verification, age in days). Unverified or very new contract, malicious label in metadata, honeypot flag → higher score. Then Kite AI enrichment.
-- **MEV Watcher** (`agents/mevWatcher.ts`): Swap selectors or `kind === 'SWAP'`, high value, slippage in metadata → elevated risk. Kite AI enrichment.
+- (MEV removed — approval risk, governance, liquidation only.)
 - **Liquidation Predictor** (`agents/liquidationPredictor.ts`): Uses `metadata.healthFactor`, `metadata.collateralRatio`, `kind === 'LEND'`. Low health factor → CRITICAL/HIGH. Kite AI enrichment.
 - **Coordinator** (`agents/coordinator.ts`): No external calls. Takes four reports; blended score (70% max + 30% avg); worst severity; recommendation BLOCK/REVIEW/ALLOW by score and severity.
 
@@ -65,7 +66,7 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 
 - **QuickNode** (`services/rpc/quicknode.ts`): When `QUICKNODE_RPC_URL` set, provides `getBlockNumber()`, `getFeeData()`. Health returns `mode: 'live'` and `blockNumber` or error. Not used inside the swarm pipeline today (no eth_call/trace in agents); simulation service is stubbed.
 - **Kitescan** (`services/rpc/kitescan.ts`): `getContractInfo(address)` — calls Kitescan/Blockscout-style API (`KITE_EXPLORER_API_URL`, default `https://testnet.kitescan.ai/api`) for verification status and first-tx age. Used by Scam Detector. Falls back to `source: 'fallback'` and nulls if API fails.
-- **Kite Chain** (`services/rpc/kiteChain.ts`): Chain ID 2368 (Kite AI Testnet). Each agent type (SENTINEL, SCAM, MEV, LIQUIDATION, COORDINATOR) can have a private key in env (`AGENT_SENTINEL_PRIVATE_KEY`, etc.). For each report, backend hashes the report payload and has the agent sign it (no on-chain tx; signature is the provenance receipt). Returns `ProvenanceRecord` (recorded: true/false, source: 'kite-chain' | 'fallback').
+- **Kite Chain** (`services/rpc/kiteChain.ts`): Chain ID 2368 (Kite AI Testnet). Each agent type (SENTINEL, SCAM, LIQUIDATION, COORDINATOR) can have a private key in env (`AGENT_SENTINEL_PRIVATE_KEY`, etc.). For each report, backend hashes the report payload and has the agent sign it (no on-chain tx; signature is the provenance receipt). Returns `ProvenanceRecord` (recorded: true/false, source: 'kite-chain' | 'fallback').
 - **Snapshot** (`services/snapshot.ts`): `fetchProposals(spaces, first)` — GraphQL to `SNAPSHOT_GRAPHQL_URL` (default hub.snapshot.org). Used by governance to load Nouns + extra spaces. `snapshotHealthCheck()` pings with one proposal. `castSnapshotVote` is **stub**: returns `{ success: false }` (TODO: EIP-712 sign and submit).
 
 ### 2.7 Governance
@@ -115,7 +116,7 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 
 ### 3.1 Backend
 
-- **Status endpoint:** Does not return `agents`, `logsCount`, `runsCount`; dashboard shows "—" for agents.
+- **Status endpoint:** Returns `agents`, `logsCount`, `runsCount` (from index.ts). Dashboard can show these.
 - **Defender:** Never called from swarmRunner; no automatic defensive actions (revoke, cancel) on BLOCK/REVIEW.
 - **Simulation:** `simulateTransaction()` in `services/simulation.ts` returns a stub (success, gas 21000, empty transfers/approvals). No QuickNode trace or eth_call.
 - **Snapshot voting:** `castSnapshotVote` is stub; no EIP-712 signing or Snapshot API submit.
@@ -155,11 +156,11 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 |------|--------|
 | Backend entry | `apps/backend/src/index.ts` |
 | Swarm pipeline | `apps/backend/src/orchestrator/swarmRunner.ts`, `consensus.ts`, `intent.ts` |
-| Agents | `apps/backend/src/agents/sentinel.ts`, `scamDetector.ts`, `mevWatcher.ts`, `liquidationPredictor.ts`, `coordinator.ts`, `defender.ts` |
+| Agents | `apps/backend/src/agents/sentinel.ts`, `scamDetector.ts`, `liquidationPredictor.ts`, `coordinator.ts`, `defender.ts` |
 | Governance | `apps/backend/src/orchestrator/governanceRunner.ts`, `apps/backend/src/governance/proposals.ts` |
-| Services | `apps/backend/src/services/agents/kite.ts`, `llm.ts`; `services/rpc/quicknode.ts`, `kitescan.ts`, `kiteChain.ts`; `services/snapshot.ts`, `simulation.ts` |
+| Services | `apps/backend/src/services/agents/kite.ts`, `llm.ts`; `services/rpc/quicknode.ts`, `kitescan.ts`, `kiteChain.ts`; `services/snapshot.ts`, `simulation.ts`; `services/payments/x402.ts`, `verifyPayment.ts`, `paymentContext.ts`, `usedPayments.ts`, `paidActions.ts` |
 | Storage | `apps/backend/src/storage/logStore.ts` |
-| Routes | `apps/backend/src/routes/health.ts`, `swarm.ts`, `governance.ts` |
+| Routes | `apps/backend/src/routes/health.ts`, `swarm.ts`, `governance.ts`, `marketplace.ts`, `execution.ts`, `analytics.ts`, `payments.ts` |
 | Contracts | `packages/contracts/src/` (AgentSafeWallet, account/AgentSafeAccount, policy/PolicyEngine, governance/GovernanceModule, GovernanceExecutor, provenance/ProvenanceRegistry, agents/) |
 | Deploy | `packages/contracts/script/Deploy.s.sol` |
 | Shared | `packages/shared/src/types/`, `schemas/`, `constants/` |
@@ -171,16 +172,15 @@ This document describes **everything Agent-Safe is doing and not doing** so an L
 
 ## 5. Suggested next steps (for LLM to prioritize)
 
-1. **Status endpoint:** Add `agents: 6`, `logsCount`, `runsCount` to `GET /status` (e.g. from logStore or in-memory counters) so dashboard shows real values.
-2. **Execute on Base (MVP):** Wire wallet connect (e.g. viem/wagmi) and build a UserOp from the intent; optionally call a bundler or show "ready to submit" with calldata.
-3. **Contract addresses:** After deployment, update `packages/shared/src/constants/contracts.ts` (or load from env) and document in README.
-4. **Defender:** Optionally call `runDefenderAgent(decision, intent)` from swarmRunner when decision is BLOCK or REVIEW_REQUIRED; or document that Defender is for future on-chain revoke flow.
-5. **Snapshot vote:** Implement EIP-712 signing and Snapshot API call in `castSnapshotVote` and expose via backend route + governance UI.
-6. **Simulation:** Use QuickNode (or public RPC) in `simulateTransaction` and surface token transfers/approvals in UI.
-7. **Provenance on Base:** After swarm consensus, submit approval records to ProvenanceRegistry on Base (if design matches) so on-chain execution can require >= 2 approvals.
-8. **0g:** If pursuing 0g bounty, add client to store provenance payload (or receipt blob) to 0g and return blob reference.
-9. **DB (optional):** If audit trail is required, connect backend to Postgres, run migrations from `db/schema.sql`, and persist audit_logs / queued_votes.
-10. **Env docs:** Extend `.env.example` (root and backend) with GEMINI_API_KEY, KITE_*, AGENT_*_PRIVATE_KEY, and brief comments.
+1. **Execute on Base (MVP):** Wire wallet connect (e.g. viem/wagmi) and build a UserOp from the intent; optionally call a bundler or show "ready to submit" with calldata.
+2. **Contract addresses:** After deployment, update `packages/shared/src/constants/contracts.ts` (or load from env) and document in README.
+3. **Defender:** Optionally call `runDefenderAgent(decision, intent)` from swarmRunner when decision is BLOCK or REVIEW_REQUIRED; or document that Defender is for future on-chain revoke flow.
+4. **Snapshot vote:** Implement EIP-712 signing and Snapshot API call in `castSnapshotVote` and expose via backend route + governance UI.
+5. **Simulation:** Use QuickNode (or public RPC) in `simulateTransaction` and surface token transfers/approvals in UI.
+6. **Provenance on Base:** After swarm consensus, submit approval records to ProvenanceRegistry on Base (if design matches) so on-chain execution can require >= 2 approvals.
+7. **0g:** If pursuing 0g bounty, add client to store provenance payload (or receipt blob) to 0g and return blob reference.
+8. **DB (optional):** If audit trail is required, connect backend to Postgres, run migrations from `db/schema.sql`, and persist audit_logs / queued_votes.
+9. **Env docs:** Extend `.env.example` (root and backend) with GEMINI_API_KEY, KITE_*, AGENT_*_PRIVATE_KEY, and brief comments.
 
 ---
 

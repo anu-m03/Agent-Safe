@@ -21,7 +21,8 @@ export const MAX_POLL_INTERVAL_MS = 120_000;
 export const CONSENSUS_THRESHOLD = 2;
 
 /** Total active voting agents (excluding Coordinator & Defender) */
-export const TOTAL_VOTING_AGENTS = 4;
+/** Specialists only (no MEV). */
+export const TOTAL_VOTING_AGENTS = 3;
 
 /** Default veto window for governance votes (seconds) */
 export const DEFAULT_VETO_WINDOW_SECONDS = 3600;

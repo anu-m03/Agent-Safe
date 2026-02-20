@@ -39,7 +39,7 @@ export interface AnalyticsSummary {
   actionsTotal: number;
   /** Cost per execution action: (gasSpentWei + x402SpendWei) / actionsTotal, or "0" if no actions */
   costPerActionWei: string;
-  /** Net runway in wei: revenueWei - (gasSpentWei + x402SpendWei) */
+  /** Net runway in wei: revenueWei - gasSpentWei (only gas is bot cost; x402SpendWei is incoming volume) */
   netRunwayWei: string;
   /** All metrics derived from log event counts for reproducibility */
   _source: 'logs';
@@ -78,7 +78,7 @@ export function computeAnalyticsSummary(): AnalyticsSummary {
     }
   }
 
-  const totalCostWei = bigAdd(gasSpentWei, x402SpendWei);
+  const totalCostWei = gasSpentWei;
   const costPerActionWei = actionsTotal > 0 ? String(BigInt(totalCostWei) / BigInt(actionsTotal)) : '0';
   const netRunwayWei = String(BigInt(revenueWei) - BigInt(totalCostWei));
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 // These match the V2 types used by the backend orchestrator.
 
 export const AgentTypeSchema = z.enum([
-  'SENTINEL', 'SCAM', 'MEV', 'LIQUIDATION', 'COORDINATOR', 'DEFENDER',
+  'SENTINEL', 'SCAM', 'LIQUIDATION', 'COORDINATOR', 'DEFENDER',
 ]);
 
 export const SeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);

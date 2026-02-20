@@ -8,7 +8,6 @@ import crypto from 'node:crypto';
 
 import { evaluateTx as sentinelEval } from '../agents/sentinel.js';
 import { evaluateTx as scamEval } from '../agents/scamDetector.js';
-import { evaluateTx as mevEval } from '../agents/mevWatcher.js';
 import { evaluateTx as liqEval } from '../agents/liquidationPredictor.js';
 import { evaluateTx as coordEval } from '../agents/coordinator.js';
 import { computeConsensus } from './consensus.js';
@@ -41,13 +40,12 @@ export async function runSwarm(tx: InputTx): Promise<SwarmRunResult> {
   // Log pipeline start
   await appendLog(createLogEvent('SWARM_START', { tx, runId }, 'INFO', runId));
 
-  // Step 1 — invoke specialist agents (sequential for determinism)
+  // Step 1 — invoke specialist agents (sequential for determinism). No MEV — approval risk, governance, liquidation only.
   const sentinel = await sentinelEval(ctx, tx);
   const scam = await scamEval(ctx, tx);
-  const mev = await mevEval(ctx, tx);
   const liq = await liqEval(ctx, tx);
 
-  const specialistReports: AgentRiskReportV2[] = [sentinel, scam, mev, liq];
+  const specialistReports: AgentRiskReportV2[] = [sentinel, scam, liq];
 
   // Step 2 — coordinator aggregates
   const coordinator = await coordEval(ctx, tx, specialistReports);

@@ -36,7 +36,6 @@ src/
 ├── agents/                        V2 heuristic agents
 │   ├── sentinel.ts                Approval / zero-addr / calldata checks
 │   ├── scamDetector.ts            Contract reputation checks
-│   ├── mevWatcher.ts              DEX swap sandwich risk
 │   ├── liquidationPredictor.ts    Health factor monitoring
 │   ├── coordinator.ts             Weighted aggregation
 │   └── defender.ts                Defensive action stub
@@ -65,7 +64,6 @@ All agents export `evaluateTx(ctx, tx): Promise<AgentRiskReportV2>` and run
 |--------------|----------------|
 | Sentinel     | Zero-address, empty calldata + high value, approve()/setApprovalForAll(), MAX_UINT |
 | Scam         | contractVerified, contractAge, phishing labels, honeypot flag |
-| MEV          | SWAP kind, DEX selector detection, high value, slippage > 300 bps |
 | Liquidation  | healthFactor thresholds (< 1.05 critical, < 1.2 high), collateral ratio |
 | Coordinator  | Weighted average of peer reports, severity counts |
 

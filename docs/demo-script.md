@@ -65,7 +65,7 @@ Go to **http://localhost:3000/defense**
    - Data: `0x095ea7b3` (approve selector)
    - Kind: APPROVAL
 2. Click **"Evaluate Transaction"** (~1s).
-3. **Show:** Agent report timeline (Sentinel, Scam, MEV, Liquidation), severity/riskScore/confidence, **Consensus Card** (ALLOW/BLOCK/REVIEW), **Intent Card** (ActionIntent).
+3. **Show:** Agent report timeline (Sentinel, Scam, Liquidation), severity/riskScore/confidence, **Consensus Card** (ALLOW/BLOCK/REVIEW), **Intent Card** (ActionIntent).
 4. Click **"Execute on Base"** — with backend configured, response includes `userOpHash`, `txHash`, `provenanceTxHashes` (real 0x… hashes when provenance is used). Otherwise simulated/MVP message.
 
 **Say:**  

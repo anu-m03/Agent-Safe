@@ -44,40 +44,6 @@ ls out/
 
 ---
 
-## 2. QuickNode — RPC Provider
-
-### What We Built
-SwarmGuard agents call Base via QuickNode RPC for real-time block data,
-transaction simulation, and mempool monitoring. The backend detects
-whether a QuickNode endpoint is configured and falls back to public RPC.
-
-### Evidence
-
-| Artefact | Location |
-|---|---|
-| RPC service | `apps/backend/src/services/rpc/` |
-| Chain constants (RPC URLs) | `packages/shared/src/constants/chains.ts` |
-| Health endpoint | `GET /health` → `integrations.quicknode` |
-| Backend env example | `apps/backend/.env.example` (QUICKNODE_RPC_URL) |
-
-### Verification Commands
-```bash
-# Check backend health — look for "quicknode" section
-curl http://localhost:4000/health | jq '.integrations.quicknode'
-
-# Expected output (live mode):
-# { "mode": "live", "blockNumber": 12345678 }
-
-# Expected output (disabled):
-# { "mode": "disabled" }
-```
-
-### UI Proof
-- **Integrations** (`/integrations`): QuickNode section with Live/Disabled badge,
-  block number display (when live), and raw health JSON
-
----
-
 ## 3. Kite AI — AI Summarisation & Risk Analysis
 
 ### What We Built
@@ -200,7 +166,7 @@ pnpm test        # Runs test scripts (includes build)
 │  /dashboard  │    │  ┌─────────────────────┐    │
 │  /defense    │    │  │  SwarmGuard Agents   │    │
 │  /governance │    │  │  Sentinel, ScamDet,  │    │
-│  /policy     │    │  │  MEV, Liquidation    │    │
+│  /policy     │    │  │  Liquidation    │    │
 │  /integrns   │    │  └────────┬────────────┘    │
 └─────────────┘    │           │                  │
                    │  ┌────────▼────────────┐     │

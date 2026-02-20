@@ -37,12 +37,11 @@ const kiteTestnet: Chain = {
 
 // ─── Agent Key Map ────────────────────────────────────────
 
-type AgentType = 'SENTINEL' | 'SCAM' | 'MEV' | 'LIQUIDATION' | 'COORDINATOR';
+type AgentType = 'SENTINEL' | 'SCAM' | 'LIQUIDATION' | 'COORDINATOR';
 
 const AGENT_KEY_ENV: Record<AgentType, string> = {
   SENTINEL:    'AGENT_SENTINEL_PRIVATE_KEY',
   SCAM:        'AGENT_SCAM_PRIVATE_KEY',
-  MEV:         'AGENT_MEV_PRIVATE_KEY',
   LIQUIDATION: 'AGENT_LIQUIDATION_PRIVATE_KEY',
   COORDINATOR: 'AGENT_COORDINATOR_PRIVATE_KEY',
 };

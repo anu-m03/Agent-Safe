@@ -17,7 +17,7 @@ const TIMEOUT_MS = 10_000;
 const SeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 const ConsensusDecisionSchema = z.enum(['ALLOW', 'BLOCK', 'REVIEW_REQUIRED']);
 const RecommendationSchema = z.enum(['ALLOW', 'BLOCK', 'REVIEW']);
-const AgentTypeSchema = z.enum(['SENTINEL', 'SCAM', 'MEV', 'LIQUIDATION', 'COORDINATOR', 'DEFENDER']);
+const AgentTypeSchema = z.enum(['SENTINEL', 'SCAM', 'LIQUIDATION', 'COORDINATOR', 'DEFENDER']);
 
 const AgentRiskReportV2Schema = z.object({
   agentId: z.string(),

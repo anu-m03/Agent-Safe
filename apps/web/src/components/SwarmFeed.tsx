@@ -20,7 +20,6 @@ interface SwarmFeedProps {
 const AGENT_ICONS: Record<string, string> = {
   SENTINEL: '🔍',
   SCAM: '🚨',
-  MEV: '⚡',
   LIQUIDATION: '💧',
   COORDINATOR: '📊',
   DEFENDER: '🛡️',

@@ -1,11 +1,13 @@
 /**
- * Three paid actions only: proposal summarise, risk classification, tx simulation.
- * Each requires x402 payment; stores paymentTxHash, result, timestamp.
- * On insufficient funds: minimal heuristic fallback + log PAYMENT_FALLBACK.
+ * Paid actions: proposal summarise, risk classification, tx simulation, request protection (swarm).
+ * Each requires x402 payment; proposal/risk/simulation store payment record; request-protection runs swarm and logs REVENUE.
+ * On insufficient funds: minimal heuristic fallback + log PAYMENT_FALLBACK (except request-protection: payment required).
  */
 
+import type { InputTx } from '@agent-safe/shared';
 import { summarise, classifyRisk } from '../agents/kite.js';
 import { simulateTransaction } from '../simulation.js';
+import { runSwarm } from '../orchestrator/swarmRunner.js';
 import { appendPaymentRecord, type PaidActionType, type PaymentRecord } from './paymentStore.js';
 import { requireX402Payment } from './x402.js';
 import { appendLog, createLogEvent } from '../../storage/logStore.js';
@@ -157,4 +159,26 @@ export async function runTxSimulation(to: string, value: string, data: string): 
     timestamp,
     fallbackUsed: true,
   });
+}
+
+// ─── 4. Request protection (swarm evaluation) ──────────────
+
+/**
+ * Require x402 payment, log REVENUE with source 'marketplace', then run existing swarm pipeline.
+ * No fallback: payment required. Uses existing agents (approval, governance, liquidation only).
+ */
+export async function runRequestProtection(inputTx: InputTx): Promise<Awaited<ReturnType<typeof runSwarm>>> {
+  const payment = await requireX402Payment('REQUEST_PROTECTION');
+  if (!payment.ok) {
+    appendLog(
+      createLogEvent('PAYMENT_FALLBACK', {
+        actionType: 'REQUEST_PROTECTION',
+        reason: payment.reason,
+        timestamp: Date.now(),
+      }, 'WARN'),
+    );
+    throw new Error(payment.reason);
+  }
+  // REVENUE already logged by requireX402Payment (x402.ts) when context is set; do not log again to avoid double-count.
+  return runSwarm(inputTx);
 }

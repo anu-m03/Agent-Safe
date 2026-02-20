@@ -5,7 +5,7 @@
 
 const MAX_RECORDS = Number(process.env.PAYMENTS_MAX_RECORDS ?? '200');
 
-export type PaidActionType = 'PROPOSAL_SUMMARISE' | 'RISK_CLASSIFICATION' | 'TX_SIMULATION';
+export type PaidActionType = 'PROPOSAL_SUMMARISE' | 'RISK_CLASSIFICATION' | 'TX_SIMULATION' | 'REQUEST_PROTECTION';
 
 export interface PaymentRecord {
   id: string;

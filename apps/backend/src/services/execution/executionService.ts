@@ -50,6 +50,9 @@ export interface ExecutionFailure {
 
 export type ExecutionResult = ExecutionSuccess | ExecutionFailure;
 
+/** Result for relay path (no provenance fields). */
+export type RelayResult = ExecutionSuccess | ExecutionFailure;
+
 // Gas defaults (conservative for execute call)
 const CALL_GAS_LIMIT = 300_000n;
 const VERIFICATION_GAS_LIMIT = 200_000n;
@@ -268,7 +271,7 @@ function packUserOpForRpc(op: {
 async function waitForUserOperationReceipt(
   bundlerUrl: string,
   userOpHash: Hash,
-  entryPoint: `0x${string}`,
+  _entryPoint: `0x${string}`,
 ): Promise<{ transactionHash: Hash; blockNumber: bigint; actualGasUsed?: bigint } | null> {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 2000));
@@ -299,6 +302,154 @@ async function waitForUserOperationReceipt(
     }
   }
   return null;
+}
+
+// ─── Relay: user-signed UserOp (no re-signing) ───────────
+
+const RELAY_REPLAY_TTL_MS = 15 * 60 * 1000;
+const RELAY_REPLAY_MAX = 1000;
+const relaySubmitted = new Map<string, number>();
+
+function relayReplayCheck(userOpHash: string): boolean {
+  const key = userOpHash.toLowerCase();
+  const expiry = relaySubmitted.get(key);
+  if (expiry != null && expiry > Date.now()) return true;
+  if (expiry != null) relaySubmitted.delete(key);
+  return false;
+}
+
+function relayReplayAdd(userOpHash: string): void {
+  const key = userOpHash.toLowerCase();
+  relaySubmitted.set(key, Date.now() + RELAY_REPLAY_TTL_MS);
+  if (relaySubmitted.size > RELAY_REPLAY_MAX) {
+    const now = Date.now();
+    for (const [k, exp] of relaySubmitted.entries()) {
+      if (exp <= now) relaySubmitted.delete(k);
+      if (relaySubmitted.size <= RELAY_REPLAY_MAX * 0.8) break;
+    }
+  }
+}
+
+function parseHexBigInt(v: unknown): bigint | null {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    const s = v.startsWith('0x') ? v.slice(2) : v;
+    try {
+      return BigInt('0x' + s);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof v === 'number' && Number.isInteger(v)) return BigInt(v);
+  return null;
+}
+
+/**
+ * Relay a user-signed UserOp to the bundler. Validates chain (Base), entryPoint, and replay.
+ * Does NOT re-sign. Logging is left to the route (EXECUTION_SUCCESS for analytics).
+ */
+export async function relayUserOp(
+  userOp: Record<string, unknown>,
+  entryPoint: string,
+): Promise<RelayResult> {
+  const dep = getDeployment();
+
+  if (dep.chainId !== 8453) {
+    return { ok: false, reason: 'Only Base (8453) is supported', code: 'CHAIN_ID' };
+  }
+
+  const entryPointNorm = (entryPoint || '').trim().toLowerCase();
+  const expectedNorm = dep.entryPoint.toLowerCase();
+  if (!entryPointNorm || entryPointNorm !== expectedNorm) {
+    return { ok: false, reason: 'EntryPoint does not match config', code: 'ENTRY_POINT' };
+  }
+
+  if (!dep.bundlerUrl) {
+    return { ok: false, reason: 'BUNDLER_NOT_CONFIGURED', code: 'CONFIG' };
+  }
+
+  const hasRequired =
+    userOp != null &&
+    typeof userOp === 'object' &&
+    typeof userOp.sender === 'string' &&
+    typeof userOp.signature === 'string' &&
+    (typeof userOp.callData === 'string' || userOp.callData === undefined);
+  if (!hasRequired) {
+    return { ok: false, reason: 'Invalid userOp: missing sender, signature, or callData', code: 'VALIDATION' };
+  }
+
+  try {
+    const bundlerRes = await fetch(dep.bundlerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_sendUserOperation',
+        params: [userOp, dep.entryPoint],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    const bundlerJson = (await bundlerRes.json()) as {
+      result?: Hash;
+      error?: { code: number; message: string; data?: string };
+    };
+
+    if (bundlerJson.error) {
+      return {
+        ok: false,
+        reason: bundlerJson.error.message ?? 'Bundler error',
+        code: 'BUNDLER',
+        details: bundlerJson.error.data,
+      };
+    }
+
+    const submittedUserOpHash = bundlerJson.result as Hash;
+    if (!submittedUserOpHash || typeof submittedUserOpHash !== 'string') {
+      return { ok: false, reason: 'No userOpHash in bundler response', code: 'BUNDLER' };
+    }
+
+    if (relayReplayCheck(submittedUserOpHash)) {
+      return { ok: false, reason: 'UserOp already submitted (replay)', code: 'REPLAY' };
+    }
+    relayReplayAdd(submittedUserOpHash);
+
+    const receipt = await waitForUserOperationReceipt(
+      dep.bundlerUrl,
+      submittedUserOpHash,
+      dep.entryPoint,
+    );
+
+    const maxFeePerGas = parseHexBigInt(userOp.maxFeePerGas) ?? 0n;
+    if (!receipt) {
+      return {
+        ok: true,
+        userOpHash: submittedUserOpHash,
+        txHash: '0x' as Hash,
+        gasUsed: '0',
+        gasCostWei: '0',
+        blockNumber: 0,
+        provenanceTxHashes: [],
+      };
+    }
+
+    const gasUsedBig = receipt.actualGasUsed ?? 0n;
+    const gasCostWei = maxFeePerGas > 0n ? gasUsedBig * maxFeePerGas : 0n;
+
+    return {
+      ok: true,
+      userOpHash: submittedUserOpHash,
+      txHash: receipt.transactionHash,
+      gasUsed: String(gasUsedBig),
+      gasCostWei: String(gasCostWei),
+      blockNumber: Number(receipt.blockNumber ?? 0),
+      provenanceTxHashes: [],
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: message, code: 'EXECUTION', details: message };
+  }
 }
 
 /**

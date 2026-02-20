@@ -1,3 +1,7 @@
+**Backend current state (Person 3):** See `docs/PROJECT-STATE-PERSON3-BACKEND.md` for x402, marketplace, execution, and next actions.
+
+---
+
 **Yes — perfect pivot to "AgentSafe as intelligent wallet wrapper / co-pilot dApp"** makes everything cleaner, safer, and 100% judge-friendly for ETHDenver 2026.
 
 Users simply **connect their existing wallet** (EOA or any smart account) via wagmi on the public frontend. Your app becomes the overlay:
@@ -8,6 +12,12 @@ Users simply **connect their existing wallet** (EOA or any smart account) via wa
 - Backend never holds keys — only orchestrates intents/userOps.
 
 This gives you a **fully public URL** with zero risk. Judges connect their own test wallet (or use read-only mode) and interact instantly.
+
+- WE ARE ONLY dealing with these 3 risks:
+Unlimited / Malicious Approvals
+Governance Proposal Risk Analysis
+Liquidation Prevention
+
 
 ### Final Adjusted Team Split (4 Undergrads, <1 Week)
 
@@ -45,7 +55,7 @@ Focus: The three core agents + creative/self-sustaining logic.
 **Person 3: Backend & Self-Sustaining Lead(Anu)**
 Focus: x402 revenue loop + wrapper execution.
 
-- Complete x402 (beyond stub in `x402.ts`): Use Coinbase CDP SDK for real USDC micropayments on Base. Agents now charge tiny fees (e.g., $0.01 per MEV check or governance summary) via x402 header. Revenue auto-sweeps to operator wallet → pays for Gemini/Kite compute.
+- Complete x402 (beyond stub in `x402.ts`): Use Coinbase CDP SDK for real USDC micropayments on Base. Agents now charge tiny fees  via x402 header. Revenue auto-sweeps to operator wallet → pays for Gemini/Kite compute.
 - Novel self-sustaining twist (beyond existing projects): "Agent Marketplace" route (`/api/marketplace/request-protection`). External users/agents pay x402 to get your MEV/Governance swarm on their tx. Revenue tracked in analytics.
 - Wrapper execution: In `executionService.ts` accept signed userOp from **connected wallet** (via frontend). No longer assumes AgentSafeAccount is the only signer.
   Deliverable: Bot runs 24/7 on its own revenue (show live balance vs compute cost).
