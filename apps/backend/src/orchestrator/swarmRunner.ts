@@ -73,8 +73,6 @@ export async function runSwarm(tx: InputTx): Promise<SwarmRunResult> {
       specialistReports.push(await sentinelEval(ctx, tx));
     } else if (agent === 'scam') {
       specialistReports.push(await scamEval(ctx, tx));
-    } else if (agent === 'mev') {
-      specialistReports.push(await mevEval(ctx, tx));
     } else if (agent === 'liquidation') {
       specialistReports.push(await liqEval(ctx, tx));
     } else if (agent === 'uniswap') {
