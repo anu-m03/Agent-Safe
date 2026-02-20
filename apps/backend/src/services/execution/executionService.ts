@@ -10,9 +10,8 @@ import {
   type Hash,
   type Hex,
   parseGwei,
-  signMessage,
-  privateKeyToAccount,
 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 import type { ActionIntent } from '@agent-safe/shared';
 import { getDeployment, validateChainId } from '../../config/deployment.js';
@@ -79,6 +78,7 @@ export async function executeIntent(intent: ActionIntent): Promise<ExecutionResu
   if (!build.ok) {
     return { ok: false, reason: build.reason, code: 'CALL_DATA' };
   }
+  const callData = build.callData;
 
   const dep = getDeployment();
   if (!dep.bundlerUrl) {
@@ -110,7 +110,7 @@ export async function executeIntent(intent: ActionIntent): Promise<ExecutionResu
       sender: dep.agentSafeAccount,
       nonce,
       initCode: '0x' as Hex,
-      callData: build.callData,
+      callData,
       callGasLimit: CALL_GAS_LIMIT,
       verificationGasLimit: VERIFICATION_GAS_LIMIT,
       preVerificationGas: PRE_VERIFICATION_GAS,
@@ -119,6 +119,7 @@ export async function executeIntent(intent: ActionIntent): Promise<ExecutionResu
       paymasterAndData: '0x' as Hex,
       signature: '0x' as Hex,
     };
+    // ERC-8021 builder code is already appended in callDataBuilder.ts for every onchain transaction
 
     const userOpHash = await publicClient.readContract({
       address: dep.entryPoint,
@@ -159,10 +160,7 @@ export async function executeIntent(intent: ActionIntent): Promise<ExecutionResu
     }
 
     const message = userOpHash;
-    const signature = await signMessage({
-      account: signer,
-      message: { raw: message },
-    });
+    const signature = await signer.signMessage({ message: { raw: message } });
 
     userOp.signature = signature as Hex;
 

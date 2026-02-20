@@ -4,6 +4,7 @@
  */
 
 import { encodeFunctionData } from 'viem';
+import { Buffer } from 'buffer';
 import type { ActionIntent } from '@agent-safe/shared';
 import { getDeployment, validateChainId, isTokenAllowed } from '../../config/deployment.js';
 import { AgentSafeAccountAbi } from '../../abi/AgentSafeAccount.js';
@@ -14,6 +15,7 @@ export type BuildCallDataResult =
   | { ok: false; reason: string };
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+const BUILDER_CODE = process.env.BASE_BUILDER_CODE || 'agentsafe42';
 
 /**
  * Build callData for AgentSafeAccount.execute(target, value, data).
@@ -30,6 +32,7 @@ export function buildCallDataFromIntent(intent: ActionIntent): BuildCallDataResu
     return { ok: false, reason: 'AGENT_SAFE_ACCOUNT_NOT_DEPLOYED' };
   }
 
+  // Every calldata now carries ERC-8021 builder code for analytics, leaderboard, and Base rewards
   switch (intent.action) {
     case 'REVOKE_APPROVAL': {
       const token = intent.meta?.token as string | undefined;
@@ -52,9 +55,11 @@ export function buildCallDataFromIntent(intent: ActionIntent): BuildCallDataResu
         functionName: 'execute',
         args: [tokenHex, 0n, innerData],
       });
+      // === ERC-8021 Builder Code Attribution ===
+      const suffix = '0x' + Buffer.from(BUILDER_CODE).toString('hex');
       return {
         ok: true,
-        callData,
+        callData: `${callData}${suffix.slice(2)}` as `0x${string}`,
         target: dep.agentSafeAccount,
         value: 0n,
         innerDescription: 'ERC20.approve(spender, 0)',
