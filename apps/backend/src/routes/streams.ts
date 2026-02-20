@@ -17,7 +17,7 @@ streamsRouter.post('/webhook', (req, res) => {
     return res.status(400).json({
       ok: false,
       error: 'Invalid payload',
-      details: parsed.error.flatten().message,
+      details: JSON.stringify(parsed.error.flatten()),
     });
   }
   const payload = parsed.data;

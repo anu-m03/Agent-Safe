@@ -5,6 +5,7 @@
 
 import { appendAlert } from './streamsStore.js';
 import type { StreamEvent } from './streamsStore.js';
+import type { LiquidationAlert } from './streamsStore.js';
 
 const LIQUIDATION_THRESHOLD = 1.05;
 const PER_TX_CAP_WEI = BigInt('1000000000000000000'); // 1e18

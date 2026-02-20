@@ -97,7 +97,7 @@ export function setVetoed(voteId: string): QueuedVote | null {
   const i = votes.findIndex((v) => v.voteId === voteId);
   if (i === -1) return null;
   const v = votes[i];
-  if (v.executed || v.vetoed) return null;
+  if (v.status === 'executed' || v.vetoed) return null;
   votes[i] = {
     ...v,
     vetoed: true,
@@ -113,7 +113,7 @@ export function setExecuted(voteId: string, txHash?: string, receipt?: string): 
   const i = votes.findIndex((v) => v.voteId === voteId);
   if (i === -1) return null;
   const v = votes[i];
-  if (v.executed || v.vetoed) return null;
+  if (v.status === 'executed' || v.vetoed) return null;
   votes[i] = {
     ...v,
     status: 'executed',

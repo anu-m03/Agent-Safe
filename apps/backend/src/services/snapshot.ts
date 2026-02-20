@@ -137,8 +137,14 @@ export async function castSnapshotVote(
       const text = await res.text();
       return { success: false, error: `HTTP ${res.status}: ${text}` };
     }
-    const data = (await res.json()) as { id?: string; [k: string]: unknown };
-    return { success: true, receipt: data.id ?? data.ipfs ?? JSON.stringify(data) };
+    const data = (await res.json()) as { id?: string; ipfs?: string; [k: string]: unknown };
+    const receipt =
+      typeof data.id === 'string'
+        ? data.id
+        : typeof data.ipfs === 'string'
+          ? data.ipfs
+          : JSON.stringify(data);
+    return { success: true, receipt };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) };
   }

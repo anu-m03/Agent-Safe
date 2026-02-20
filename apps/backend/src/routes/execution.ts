@@ -23,7 +23,7 @@ executionRouter.post('/execute', async (req, res) => {
         ok: false,
         reason: 'Invalid ActionIntent',
         code: 'VALIDATION',
-        details: parsed.error.flatten().message,
+        details: JSON.stringify(parsed.error.flatten()),
       });
     }
     const intent = parsed.data;
@@ -67,7 +67,7 @@ executionRouter.post('/execute/estimate', async (req, res) => {
       return res.status(400).json({
         ok: false,
         reason: 'Invalid ActionIntent',
-        details: parsed.error.flatten().message,
+        details: JSON.stringify(parsed.error.flatten()),
       });
     }
     const result = await estimateGasForIntent(parsed.data);

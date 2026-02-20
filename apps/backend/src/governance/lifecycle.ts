@@ -4,7 +4,6 @@
  */
 
 import { privateKeyToAccount } from 'viem/accounts';
-import { signMessage as viemSignMessage } from 'viem';
 import type { Hex } from 'viem';
 import {
   createQueuedVote,
@@ -28,8 +27,7 @@ function getSigner(): { address: string; signMessage: (msg: string) => Promise<s
     const account = privateKeyToAccount(hex);
     return {
       address: account.address,
-      signMessage: (msg: string) =>
-        viemSignMessage({ account, message: msg }),
+      signMessage: (msg: string) => account.signMessage({ message: msg }),
     };
   } catch {
     return null;
