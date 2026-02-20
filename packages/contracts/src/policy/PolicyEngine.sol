@@ -74,6 +74,11 @@ contract PolicyEngine {
     /// @notice Allowlisted governor addresses for governance mode
     mapping(address => bool) public allowedGovernors;
 
+    struct Frame {
+        address sender;
+        bytes data;
+    }
+
     // ─── Errors ──────────────────────────────────────────
 
     error OnlyOwner();
@@ -226,8 +231,7 @@ contract PolicyEngine {
         bytes calldata data,
         bool isGovernanceMode
     ) external view returns (bool allowed, bytes32 reason) {
-        account; // silence unused warning
-        return _validate(target, value, data, isGovernanceMode);
+        return _validate(account, target, value, data, isGovernanceMode);
     }
 
     // ─── Validation (state-mutating — updates spend) ────
@@ -250,8 +254,7 @@ contract PolicyEngine {
         bytes calldata data,
         bool isGovernanceMode
     ) external returns (bool allowed, bytes32 reason) {
-        account; // silence unused warning
-        (allowed, reason) = _validate(target, value, data, isGovernanceMode);
+        (allowed, reason) = _validate(account, target, value, data, isGovernanceMode);
         if (allowed && value > 0) {
             // Record ETH spend in current hourly bucket
             hourlySpend[currentBucket()] += value;
@@ -261,11 +264,18 @@ contract PolicyEngine {
     // ─── Internal Validation Logic ──────────────────────
 
     function _validate(
+        address account,
         address target,
         uint256 value,
         bytes calldata data,
         bool isGovernanceMode
     ) internal view returns (bool, bytes32) {
+        if (data.length > 0) {
+            // EIP-8141 (Frame Tx, type 0x06) simulation — prepares for Hegota upgrade — programmable agent frames
+            Frame memory frame = Frame({sender: account, data: data});
+            (frame);
+        }
+
         // ── Rule 1: Denylist ──
         if (denylistedTargets[target]) {
             return (false, "DENYLISTED_TARGET");

@@ -54,6 +54,11 @@ contract AgentSafeAccount {
 
     uint256 public constant CONSENSUS_THRESHOLD = 2;
 
+    struct Frame {
+        address sender;
+        bytes data;
+    }
+
     // ─── Errors ──────────────────────────────────────────
 
     error Unauthorized();
@@ -143,6 +148,13 @@ contract AgentSafeAccount {
 
         if (recovered != swarmSigner && recovered != owner) {
             return 1; // SIG_VALIDATION_FAILED
+        }
+
+        if (userOp.callData.length > 0) {
+            // Simulate EIP-8141 frame validation
+            // Prepares for Hegota upgrade — programmable agent frames
+            Frame memory frame = Frame({sender: recovered, data: userOp.callData});
+            (frame);
         }
 
         // 2. Decode calldata and validate via policy engine (view check — no state mutation)
