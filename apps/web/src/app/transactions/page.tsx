@@ -8,7 +8,7 @@ export default function TransactionsPage() {
       <h2 className="mb-6 text-2xl font-bold text-white">Transaction Preview</h2>
 
       {/* Simulated transaction */}
-      <div className="mb-6 rounded-xl border border-gray-800 bg-safe-card p-6">
+      <div className="mb-6 glass-panel rounded-xl p-6">
         <h3 className="mb-4 text-lg font-semibold text-white">Pending Transaction</h3>
         <div className="space-y-2 text-sm">
           <Row label="Action" value="ERC-20 Approve" />
@@ -19,7 +19,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Simulation result */}
-      <div className="mb-6 rounded-xl border border-gray-800 bg-safe-card p-6">
+      <div className="mb-6 glass-panel rounded-xl p-6">
         <h3 className="mb-4 text-lg font-semibold text-white">Simulation Result</h3>
         <div className="space-y-2 text-sm">
           <Row label="Gas Estimate" value="48,230" />
@@ -45,7 +45,7 @@ export default function TransactionsPage() {
       </div>
 
       {/* Agent breakdown */}
-      <div className="rounded-xl border border-gray-800 bg-safe-card p-6">
+      <div className="glass-panel rounded-xl p-6">
         <h3 className="mb-4 text-lg font-semibold text-white">Agent-by-Agent Breakdown</h3>
         <div className="space-y-3">
           <AgentRow agent="Sentinel" risk="HIGH" reason="Unlimited approval to unverified contract" />

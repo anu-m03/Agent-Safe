@@ -79,7 +79,7 @@ export interface HealthResponse {
 }
 
 export interface StatusResponse {
-  agents: number;
+  agents: number | string[];
   logsCount: number;
   runsCount: number;
   uptime: number;
@@ -92,6 +92,38 @@ export function getHealth() {
 
 export function getStatus() {
   return request<StatusResponse>('/status');
+}
+
+export interface AnalyticsSummaryResponse {
+  gasSpentWei: string;
+  x402SpendWei: string;
+  revenueWei: string;
+  actionsLast24h: number;
+  actionsPerDay: number;
+  actionsTotal: number;
+  costPerActionWei: string;
+  netRunwayWei: string;
+  _source: 'logs';
+}
+
+export function getAnalyticsSummary() {
+  return request<AnalyticsSummaryResponse>('/api/analytics/summary');
+}
+
+export interface PaymentsResponse {
+  ok: true;
+  payments: Array<{
+    id: string;
+    actionType: string;
+    paymentTxHash: string;
+    result: unknown;
+    timestamp: number;
+    fallbackUsed: boolean;
+  }>;
+}
+
+export function getPayments(limit = 100) {
+  return request<PaymentsResponse>(`/api/payments?limit=${limit}`);
 }
 
 // ─── SwarmGuard ──────────────────────────────────────────
@@ -250,6 +282,8 @@ export function executeVote(voteId: string) {
     method: 'POST',
     body: JSON.stringify({ voteId }),
   });
+}
+
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {
@@ -264,4 +298,37 @@ export function getProposalSpace(proposalId: string) {
 
 export function getSpatialAtlas() {
   return request<SpatialAtlasResponse>('/api/governance/spatial-atlas');
+}
+
+// ─── Streams (Liquidation signals) ───────────────────────
+
+export interface StreamEvent {
+  id: string;
+  timestamp: number;
+  healthFactor: number;
+  protocol: string;
+  debtPosition: string;
+  chainId?: number;
+  raw?: Record<string, unknown>;
+}
+
+export interface LiquidationAlert {
+  id: string;
+  timestamp: number;
+  eventId: string;
+  healthFactor: number;
+  protocol: string;
+  debtPosition: string;
+  intent: 'LIQUIDATION_REPAY' | 'LIQUIDATION_ADD_COLLATERAL';
+  shortfallAmount?: string;
+  perTxCapRespected: boolean;
+  dailyAdvisoryCapNote?: string;
+}
+
+export function getStreamEvents(limit = 20) {
+  return request<{ events: StreamEvent[] }>(`/api/streams/events?limit=${limit}`);
+}
+
+export function getStreamAlerts(limit = 20) {
+  return request<{ alerts: LiquidationAlert[] }>(`/api/streams/alerts?limit=${limit}`);
 }

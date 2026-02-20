@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -19,14 +20,15 @@ const typeStyles = {
 };
 
 const icons = {
-  success: '✓',
-  error: '✕',
-  info: 'ℹ',
-  warning: '⚠',
+  success: CheckCircle2,
+  error: XCircle,
+  info: Info,
+  warning: AlertTriangle,
 };
 
 export function Toast({ message, type = 'info', duration = 3000, onClose }: ToastProps) {
   const [visible, setVisible] = useState(true);
+  const Icon = icons[type];
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -46,7 +48,7 @@ export function Toast({ message, type = 'info', duration = 3000, onClose }: Toas
         ${visible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}
       `}
     >
-      <span className="text-xl">{icons[type]}</span>
+      <Icon className="h-5 w-5" strokeWidth={1.5} />
       <span className="text-sm font-medium">{message}</span>
       <button
         onClick={() => {
@@ -55,7 +57,7 @@ export function Toast({ message, type = 'info', duration = 3000, onClose }: Toas
         }}
         className="ml-2 text-gray-500 transition-colors hover:text-white"
       >
-        ✕
+        <X className="h-4 w-4" strokeWidth={1.5} />
       </button>
     </div>
   );

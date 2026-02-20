@@ -59,7 +59,7 @@ export default function GovernancePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200/80">GovernanceSafe Live Feed</p>
         <h2 className="mt-2 text-3xl font-semibold text-white">Nouns DAO + Snapshot Proposals</h2>
         <p className="mt-2 max-w-3xl text-sm text-slate-300">
-          Live governance proposals are ingested from Snapshot, with Nouns DAO highlighted. Run AI recommendations on any card to generate a vote intent with policy checks.
+          Live governance proposals are ingested from Snapshot, with Nouns DAO highlighted. Flow: get AI recommendation, review policy checks, sign vote intent, then queue.
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <StatPill label="Total Proposals" value={loading ? '...' : String(proposals.length)} />

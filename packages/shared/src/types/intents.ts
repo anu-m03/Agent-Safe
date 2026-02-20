@@ -68,7 +68,7 @@ export type LogEventType =
   | 'PAYMENT_FALLBACK'
   | 'EXECUTION_SUCCESS'
   | 'X402_PAYMENT'
-  | 'REVENUE';
+  | 'REVENUE'
   | 'SPATIAL_GENERATION';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
