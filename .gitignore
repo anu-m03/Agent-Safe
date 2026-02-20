@@ -13,3 +13,9 @@ coverage/
 packages/contracts/cache/
 packages/contracts/out/
 packages/contracts/broadcast/
+
+# Runtime / local data
+apps/backend/.data/
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo

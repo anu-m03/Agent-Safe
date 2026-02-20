@@ -100,13 +100,17 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
     setError(null);
     const res = await apiExecuteVote(queued.voteId);
     setExecuting(false);
-    if (res.ok && res.data && !('reason' in res.data)) {
+    if (res.ok && res.data && !res.data.ok) {
+      setError(res.data.reason);
+      return;
+    }
+    if (res.ok && res.data && res.data.ok) {
+      const executed = res.data;
       setQueued((q) =>
-        q ? { ...q, status: 'executed', receipt: res.data.receipt, txHash: res.data.txHash } : null,
+        q ? { ...q, status: 'executed', receipt: executed.receipt, txHash: executed.txHash } : null,
       );
     } else {
-      const reason = res.ok && res.data && 'reason' in res.data ? res.data.reason : res.error;
-      setError(reason ?? 'Execute failed');
+      setError(res.error ?? 'Execute failed');
     }
   }
 
@@ -195,7 +199,7 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
       {/* Choices */}
       {proposal.choices && proposal.choices.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {proposal.choices.map((c) => (
+          {proposal.choices.map((c: string) => (
             <span
               key={c}
               className="rounded-md border border-white/10 bg-black/30 px-2 py-0.5 text-xs text-slate-300"
@@ -254,7 +258,7 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
 
           {intent.reasons.length > 0 && (
             <ul className="space-y-0.5">
-              {intent.reasons.map((r, i) => (
+              {intent.reasons.map((r: string, i: number) => (
                 <li key={i} className="text-xs text-slate-300">
                   • {r}
                 </li>
@@ -350,7 +354,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function PolicyChecksDisplay({ checks }: { checks: Record<string, unknown> }) {
-  const entries = Object.keys(checks).map((key) => {
+  const entries = Object.keys(checks).map((key: string) => {
     const val = checks[key] as { passed?: boolean; detail?: string } | undefined;
     return { key, passed: val?.passed ?? false, detail: val?.detail ?? '' };
   });
@@ -359,7 +363,7 @@ function PolicyChecksDisplay({ checks }: { checks: Record<string, unknown> }) {
     <div>
       <span className="text-xs font-semibold text-slate-400">Policy Checks:</span>
       <div className="mt-1 flex flex-wrap gap-1">
-        {entries.map((e) => (
+        {entries.map((e: { key: string; passed: boolean; detail: string }) => (
           <span
             key={e.key}
             className={`rounded px-2 py-0.5 text-xs ${

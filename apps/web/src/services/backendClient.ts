@@ -24,8 +24,8 @@ const TIMEOUT_MS = 10_000;
 // ─── Result wrapper ──────────────────────────────────────
 
 export type ApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
+  | { ok: true; data: T; error?: undefined }
+  | { ok: false; error: string; data?: undefined };
 
 // ─── Internal helpers ────────────────────────────────────
 
@@ -250,6 +250,7 @@ export function executeVote(voteId: string) {
     method: 'POST',
     body: JSON.stringify({ voteId }),
   });
+}
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { getSpatialAtlas } from '@/services/backendClient';
-import type { SpatialMemory } from '@agent-safe/shared';
+import type { SpatialMemory, AgentMarker, DetectedZone } from '@agent-safe/shared';
 
 /**
  * Spatial Atlas — multi-environment navigation page.
@@ -30,8 +30,8 @@ export default function SpatialAtlasPage() {
   useEffect(() => { load(); }, [load]);
 
   const maxSeverity = (mem: SpatialMemory): 'low' | 'med' | 'high' => {
-    if (mem.agentMarkers.some(m => m.severity === 'high')) return 'high';
-    if (mem.agentMarkers.some(m => m.severity === 'med')) return 'med';
+    if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'high')) return 'high';
+    if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'med')) return 'med';
     return 'low';
   };
 
@@ -233,7 +233,7 @@ function SpaceCard({
 
         {/* Agent Markers summary */}
         <div className="flex flex-wrap gap-1">
-          {space.agentMarkers.map((m, i) => (
+          {space.agentMarkers.map((m: AgentMarker, i: number) => (
             <span
               key={i}
               className={`rounded px-1.5 py-0.5 text-[10px] border ${sevBadge(m.severity)}`}
@@ -246,7 +246,7 @@ function SpaceCard({
 
         {/* Zones */}
         <div className="flex flex-wrap gap-1">
-          {space.detectedZones.map((z, i) => (
+          {space.detectedZones.map((z: DetectedZone, i: number) => (
             <span
               key={i}
               className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-300"
@@ -273,7 +273,7 @@ function SpaceCard({
             {/* Agent Markers Detail */}
             <div>
               <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Agent Markers</p>
-              {space.agentMarkers.map((m, i) => (
+              {space.agentMarkers.map((m: AgentMarker, i: number) => (
                 <div key={i} className="flex items-start gap-2 text-xs mb-1">
                   <span className={`shrink-0 rounded px-1 py-0.5 border ${sevBadge(m.severity)}`}>
                     {m.severity.toUpperCase()}
@@ -288,7 +288,7 @@ function SpaceCard({
             {/* Zone Details */}
             <div>
               <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Detected Zones</p>
-              {space.detectedZones.map((z, i) => (
+              {space.detectedZones.map((z: DetectedZone, i: number) => (
                 <div key={i} className="text-xs text-slate-300 mb-1">
                   <strong>{z.zone}</strong> ({z.riskDomain}) — {z.meaning}
                 </div>

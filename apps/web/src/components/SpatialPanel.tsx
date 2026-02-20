@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { generateProposalSpace, getProposalSpace } from '@/services/backendClient';
-import type { SpatialMemory } from '@agent-safe/shared';
+import type { SpatialMemory, AgentMarker, DetectedZone } from '@agent-safe/shared';
 
 interface SpatialPanelProps {
   proposalId: string;
@@ -151,7 +151,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
 
           {/* Agent markers inline */}
           <div className="flex flex-wrap gap-1">
-            {memory.agentMarkers.map((m, i) => (
+            {memory.agentMarkers.map((m: AgentMarker, i: number) => (
               <span
                 key={i}
                 className={`rounded px-1.5 py-0.5 text-[10px] border ${sevBadge(m.severity)}`}
@@ -164,7 +164,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
 
           {/* Zones inline */}
           <div className="flex flex-wrap gap-1">
-            {memory.detectedZones.map((z, i) => (
+            {memory.detectedZones.map((z: DetectedZone, i: number) => (
               <span
                 key={i}
                 className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-400"
@@ -185,7 +185,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
           {/* Agent markers detail */}
           <div>
             <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Agent Markers</p>
-            {memory.agentMarkers.map((m, i) => (
+            {memory.agentMarkers.map((m: AgentMarker, i: number) => (
               <div key={i} className="flex items-start gap-2 text-xs mb-1">
                 <span className={`shrink-0 rounded px-1 py-0.5 border ${sevBadge(m.severity)}`}>
                   {m.severity.toUpperCase()}
@@ -200,7 +200,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
           {/* Zones detail */}
           <div>
             <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Detected Zones</p>
-            {memory.detectedZones.map((z, i) => (
+            {memory.detectedZones.map((z: DetectedZone, i: number) => (
               <div key={i} className="text-xs text-slate-300 mb-1">
                 <strong>{z.zone}</strong> ({z.riskDomain}) — {z.meaning}
               </div>

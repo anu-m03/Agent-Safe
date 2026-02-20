@@ -24,8 +24,8 @@ export function IntentCard({ intent }: IntentCardProps) {
   useEffect(() => {
     let cancelled = false;
     estimateExecutionGas(intent).then((res) => {
-      if (cancelled || !res.ok) return;
-      setGasEstimate({ callGasLimit: res.callGasLimit, estimatedTotal: res.estimatedTotal });
+      if (cancelled || !res.ok || !res.data.ok) return;
+      setGasEstimate({ callGasLimit: res.data.callGasLimit, estimatedTotal: res.data.estimatedTotal });
     });
     return () => { cancelled = true; };
   }, [intent.intentId]);
@@ -53,7 +53,11 @@ export function IntentCard({ intent }: IntentCardProps) {
       setExecutionError(null);
     } else {
       setExecutionResult(null);
-      setExecutionError(res.ok && res.data && 'reason' in res.data ? (res.data as ExecutionFailureResponse).reason : res.error ?? 'Execution failed');
+      if (res.ok && 'reason' in res.data) {
+        setExecutionError((res.data as ExecutionFailureResponse).reason);
+      } else {
+        setExecutionError(res.ok ? 'Execution failed' : res.error);
+      }
     }
   }
 

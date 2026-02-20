@@ -33,12 +33,12 @@ export const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffff
 export const SNAPSHOT_HUB_URL = 'https://hub.snapshot.org';
 
 // Contract addresses (placeholder until deployment)
-export { CONTRACT_ADDRESSES } from './contracts';
+export { CONTRACT_ADDRESSES } from './contracts.js';
 
 // Chain configurations
-export { CHAINS, DEFAULT_CHAIN_ID } from './chains';
-export type { ChainConfig } from './chains';
+export { CHAINS, DEFAULT_CHAIN_ID } from './chains.js';
+export type { ChainConfig } from './chains.js';
 
 // Sponsor registry
-export { SPONSORS, getSponsor } from './sponsors';
-export type { SponsorEntry } from './sponsors';
+export { SPONSORS, getSponsor } from './sponsors.js';
+export type { SponsorEntry } from './sponsors.js';

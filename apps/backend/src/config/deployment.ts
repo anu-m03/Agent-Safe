@@ -28,6 +28,42 @@ export interface BaseDeployment {
 
 const BASE_MAINNET_CHAIN_ID = 8453;
 
+function envString(name: string): string | undefined {
+  const value = process.env[name];
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseAddressList(value: string): `0x${string}`[] {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v) => (typeof v === 'string' ? v.trim() : ''))
+          .filter((v): v is `0x${string}` => v.length > 0) as `0x${string}`[];
+      }
+    } catch {
+      // fall through to comma-separated parsing
+    }
+  }
+  return trimmed
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v): v is `0x${string}` => v.length > 0) as `0x${string}`[];
+}
+
+function envAddressList(...keys: string[]): `0x${string}`[] | undefined {
+  for (const key of keys) {
+    const value = envString(key);
+    if (!value) continue;
+    return parseAddressList(value);
+  }
+  return undefined;
+}
+
 function loadDeployment(): BaseDeployment {
   const candidates = process.env.DEPLOYMENT_PATH
     ? [process.env.DEPLOYMENT_PATH]
@@ -56,18 +92,24 @@ function loadDeployment(): BaseDeployment {
 
   try {
     const raw = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    const envAllowedTokens = envAddressList('BASE_ALLOWED_TOKENS', 'ALLOWED_TOKENS');
+    const envAllowedTargets = envAddressList('BASE_ALLOWED_TARGETS', 'ALLOWED_TARGETS');
     return {
       chainId: Number(raw.chainId) || BASE_MAINNET_CHAIN_ID,
       name: (raw.name as string) ?? 'Base',
       rpcUrl: (process.env.BASE_RPC_URL as string) ?? (raw.rpcUrl as string) ?? fallback.rpcUrl,
       bundlerUrl: (process.env.BUNDLER_RPC_URL as string) ?? (raw.bundlerUrl as string) ?? fallback.bundlerUrl,
-      entryPoint: ((raw.entryPoint as string) ?? fallback.entryPoint) as `0x${string}`,
-      agentSafeAccount: ((raw.agentSafeAccount as string) ?? fallback.agentSafeAccount) as `0x${string}`,
-      policyEngine: ((raw.policyEngine as string) ?? fallback.policyEngine) as `0x${string}`,
-      provenanceRegistry: ((raw.provenanceRegistry as string) ?? fallback.provenanceRegistry) as `0x${string}`,
-      governanceExecutor: ((raw.governanceExecutor as string) ?? fallback.governanceExecutor) as `0x${string}`,
-      allowedTokens: Array.isArray(raw.allowedTokens) ? (raw.allowedTokens as `0x${string}`[]) : fallback.allowedTokens,
-      allowedTargets: Array.isArray(raw.allowedTargets) ? (raw.allowedTargets as `0x${string}`[]) : fallback.allowedTargets,
+      entryPoint: (envString('ENTRY_POINT_ADDRESS') ?? (raw.entryPoint as string) ?? fallback.entryPoint) as `0x${string}`,
+      agentSafeAccount: (envString('AGENT_SAFE_ACCOUNT') ?? (raw.agentSafeAccount as string) ?? fallback.agentSafeAccount) as `0x${string}`,
+      policyEngine: (envString('POLICY_ENGINE_ADDRESS') ?? (raw.policyEngine as string) ?? fallback.policyEngine) as `0x${string}`,
+      provenanceRegistry: (envString('PROVENANCE_REGISTRY_ADDRESS') ?? (raw.provenanceRegistry as string) ?? fallback.provenanceRegistry) as `0x${string}`,
+      governanceExecutor: (envString('GOVERNANCE_EXECUTOR_ADDRESS') ?? (raw.governanceExecutor as string) ?? fallback.governanceExecutor) as `0x${string}`,
+      allowedTokens:
+        envAllowedTokens ??
+        (Array.isArray(raw.allowedTokens) ? (raw.allowedTokens as `0x${string}`[]) : fallback.allowedTokens),
+      allowedTargets:
+        envAllowedTargets ??
+        (Array.isArray(raw.allowedTargets) ? (raw.allowedTargets as `0x${string}`[]) : fallback.allowedTargets),
     };
   } catch {
     return fallback;

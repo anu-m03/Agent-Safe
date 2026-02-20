@@ -12,6 +12,12 @@ export default function DashboardPage() {
   const [proposalCount, setProposalCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copiedBuilderCode, setCopiedBuilderCode] = useState(false);
+  const [yieldLoading, setYieldLoading] = useState(false);
+  const [yieldRecommendation, setYieldRecommendation] = useState<string | null>(null);
+  const [yieldError, setYieldError] = useState<string | null>(null);
+  const builderCode = process.env.NEXT_PUBLIC_BASE_BUILDER_CODE || 'agentsafe42';
+  const builderBadgeText = `Builder Code: ${builderCode} – All txs attributed on Base`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -20,6 +26,48 @@ export default function DashboardPage() {
     if (s.ok) setStatus(s.data);
     if (p.ok) setProposalCount(p.data.proposals.length);
     setLoading(false);
+  }, []);
+
+  const copyBuilderCode = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(builderBadgeText);
+      setCopiedBuilderCode(true);
+      setTimeout(() => setCopiedBuilderCode(false), 1500);
+    } catch {
+      setCopiedBuilderCode(false);
+    }
+  }, [builderBadgeText]);
+
+  const checkYieldOpportunity = useCallback(async () => {
+    setYieldLoading(true);
+    setYieldError(null);
+    setYieldRecommendation(null);
+
+    try {
+      const res = await fetch('/api/swarm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          intent: 'uniswap',
+          chain: 'base',
+          visibility: 'public',
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Request failed');
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      const data = (await res.json()) as Record<string, unknown>;
+      const recommendation = extractYieldRecommendation(data);
+      setYieldRecommendation(recommendation);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch yield suggestion.';
+      setYieldError(message);
+    } finally {
+      setYieldLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -38,6 +86,17 @@ export default function DashboardPage() {
           <p className="text-gray-400">
             AgentSafe + SwarmGuard overview — Real-time multi-agent protection
           </p>
+          <button
+            type="button"
+            onClick={copyBuilderCode}
+            className="mt-4 inline-flex w-full max-w-full items-center justify-between gap-2 rounded-lg border border-blue-800/60 bg-blue-900/20 px-3 py-2 text-left text-xs text-blue-200 transition-colors hover:border-blue-700 hover:bg-blue-900/30 sm:w-auto"
+            title="Copy builder code badge"
+          >
+            <span className="font-mono">{builderBadgeText}</span>
+            <span className="shrink-0 rounded bg-blue-950/60 px-2 py-0.5 text-[10px] uppercase tracking-wide text-blue-300">
+              {copiedBuilderCode ? 'Copied' : 'Copy'}
+            </span>
+          </button>
         </div>
         {/* Background decoration */}
         <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-gradient-to-br from-green-500/10 to-blue-500/10 blur-3xl" />
@@ -141,6 +200,40 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Uniswap Yield Suggestion */}
+      <div className="rounded-xl border border-emerald-800/60 bg-gradient-to-br from-emerald-900/20 to-safe-card p-6 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Uniswap Yield Suggestion</h3>
+            <p className="mt-1 text-sm text-emerald-200/80">
+              Public yield check on Base with no login required.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={checkYieldOpportunity}
+            disabled={yieldLoading}
+            className="rounded-lg border border-emerald-700 bg-emerald-900/40 px-4 py-2 text-sm font-medium text-emerald-200 transition-colors hover:bg-emerald-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {yieldLoading ? 'Checking…' : 'Check Yield Opportunity'}
+          </button>
+        </div>
+
+        {yieldRecommendation && (
+          <div className="rounded-lg border border-emerald-800/70 bg-emerald-950/30 p-4">
+            <p className="mb-2 text-xs uppercase tracking-wide text-emerald-300">Agent Recommendation</p>
+            <p className="text-sm text-emerald-100">{yieldRecommendation}</p>
+            <p className="mt-3 text-sm font-medium text-white">Sign with your connected wallet</p>
+          </div>
+        )}
+
+        {yieldError && (
+          <div className="rounded-lg border border-red-800 bg-red-900/20 p-3 text-sm text-safe-red">
+            Unable to fetch Uniswap suggestion: {yieldError}
+          </div>
+        )}
+      </div>
+
       {/* System Status */}
       <div className="rounded-xl border border-gray-800 bg-safe-card p-6 shadow-xl">
         <div className="mb-6 flex items-center justify-between">
@@ -183,6 +276,44 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+function extractYieldRecommendation(data: Record<string, unknown>): string {
+  if (typeof data.recommendation === 'string' && data.recommendation.trim()) {
+    return data.recommendation;
+  }
+
+  const intent = isObject(data.intent) ? data.intent : null;
+  const intentMeta = intent && isObject(intent.meta) ? intent.meta : null;
+  if (intentMeta && typeof intentMeta.summary === 'string' && intentMeta.summary.trim()) {
+    return intentMeta.summary;
+  }
+
+  const reports = Array.isArray(data.reports) ? data.reports : null;
+  if (reports) {
+    const uniswapReport = reports.find((report) => {
+      if (!isObject(report) || typeof report.agent !== 'string') return false;
+      return report.agent.toLowerCase() === 'uniswap';
+    });
+    if (
+      isObject(uniswapReport) &&
+      Array.isArray(uniswapReport.rationale) &&
+      typeof uniswapReport.rationale[0] === 'string' &&
+      uniswapReport.rationale[0].trim()
+    ) {
+      return uniswapReport.rationale[0];
+    }
+  }
+
+  if (typeof data.message === 'string' && data.message.trim()) {
+    return data.message;
+  }
+
+  return 'Yield opportunity identified on Uniswap. Review terms, then sign with your connected wallet.';
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function QuickLink({
