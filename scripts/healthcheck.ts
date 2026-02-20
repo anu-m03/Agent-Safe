@@ -174,34 +174,68 @@ async function main() {
     const schema = z.object({
       alive: z.boolean(),
       uptime: z.number(),
+      systemPlanes: z.array(z.string()).optional(),
     });
     schema.parse(data);
   });
 
-  // 3. POST /api/swarm/evaluate-tx
-  await runTest('Swarm evaluate-tx', 'POST /api/swarm/evaluate-tx', async () => {
-    const data = await fetchJSON('/api/swarm/evaluate-tx', {
+  // 3. POST /api/app-agent/init (SwarmGuard removed; App Agent flow)
+  await runTest('App Agent init', 'POST /api/app-agent/init', async () => {
+    const data = await fetchJSON('/api/app-agent/init', {
       method: 'POST',
       body: JSON.stringify({
-        chainId: 8453,
-        from: '0x0000000000000000000000000000000000000001',
-        to: '0xdead000000000000000000000000000000000000',
-        data: '0x095ea7b3',
-        value: '0',
-        kind: 'APPROVAL',
+        walletAddress: '0x0000000000000000000000000000000000000001',
+        intent: 'healthcheck',
       }),
     });
-    SwarmRunResultSchema.parse(data);
-  });
-
-  // 4. GET /api/swarm/logs
-  await runTest('Swarm logs', 'GET /api/swarm/logs', async () => {
-    const data = await fetchJSON('/api/swarm/logs?limit=5');
-    const schema = z.object({ logs: z.array(LogEventSchema) });
+    const schema = z.object({
+      sessionId: z.string(),
+      budget: z.object({
+        perAppUsd: z.number(),
+        dailyBurnLimit: z.number(),
+        runwayDays: z.number(),
+      }).optional(),
+      createdAt: z.number(),
+    });
     schema.parse(data);
   });
 
-  // 5. GET /api/governance/proposals
+  // 4. POST /api/app-agent/run-cycle
+  let lastAppId: string | undefined;
+  await runTest('App Agent run-cycle', 'POST /api/app-agent/run-cycle', async () => {
+    const data = await fetchJSON('/api/app-agent/run-cycle', {
+      method: 'POST',
+      body: JSON.stringify({
+        walletAddress: '0x0000000000000000000000000000000000000001',
+      }),
+    }) as { appId?: string; status?: string };
+    const schema = z.object({
+      appId: z.string(),
+      status: z.enum(['DEPLOYED', 'REJECTED', 'BUDGET_BLOCKED']),
+      idea: z.record(z.unknown()),
+      budgetRemaining: z.number(),
+      pipelineLogs: z.array(z.unknown()).optional(),
+      baseNative: z.object({ chain: z.string(), lowFeeMode: z.boolean(), attributionReady: z.boolean() }).optional(),
+    });
+    const parsed = schema.parse(data);
+    lastAppId = parsed.appId;
+  });
+
+  // 5. GET /api/app-agent/:appId/status
+  if (lastAppId) {
+    await runTest('App Agent status', `GET /api/app-agent/${lastAppId}/status`, async () => {
+      const data = await fetchJSON(`/api/app-agent/${lastAppId}/status`);
+      const schema = z.object({
+        appId: z.string(),
+        status: z.string(),
+        metrics: z.object({ users: z.number(), revenue: z.number(), impressions: z.number() }),
+        supportStatus: z.string(),
+      });
+      schema.parse(data);
+    });
+  }
+
+  // 7. GET /api/governance/proposals
   let firstProposalId: string | undefined;
   await runTest('Governance proposals', 'GET /api/governance/proposals', async () => {
     const data = await fetchJSON('/api/governance/proposals') as { proposals: unknown[] };
@@ -212,7 +246,7 @@ async function main() {
     }
   });
 
-  // 6. POST /api/governance/recommend
+  // 8. POST /api/governance/recommend
   await runTest('Governance recommend', 'POST /api/governance/recommend', async () => {
     const proposalId = firstProposalId ?? 'prop-1';
     const data = await fetchJSON('/api/governance/recommend', {

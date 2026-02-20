@@ -88,3 +88,51 @@ Need the exact Vercel deploy steps, a sample /stats page code, or the MEV same-n
 **Design doc:** `docs/DESIGN-APP-AGENT-PIVOT.md`
 
 Pivot the second agent to an **autonomous Base mini-app creator** funded by Uniswap yield, with stop-support (metrics/time), hand-back to user with revenue share, and optional user intent. That doc lists all required **backend and system architecture** changes: data model, services (yield allocation, trends, mini-app creation/deployment, metrics, lifecycle), new App Agent, routes, funding flow, config, and shared types/schemas.
+
+---
+
+## What’s left (checklist)
+
+**Testing:** See **`docs/HOW-TO-TEST.md`** for how to verify the current system (curl, healthcheck script, frontend flow).
+
+### Done (App Agent pivot)
+
+- [x] SwarmGuard deprecated; App Agent backend (init, run-cycle, generate, validate, deploy, status, budget).
+- [x] Safety pipeline (template, allowlist, budget gate, simulation, novelty) and budget governor.
+- [x] In-memory session + app store; run-cycle returns pipeline logs and Base-native signals.
+- [x] Dashboard: SwarmGuard removed; Run App Agent Cycle + init on connect + status polling.
+- [x] Healthcheck script updated for App Agent (no Swarm).
+
+### Remaining (from team split + polish)
+
+**Person 1 – Integrations & standards**
+
+- [ ] ERC-8021: Builder code in executionService/callDataBuilder (attribution on every tx).
+- [ ] EIP-8004: AgentRegistry.sol hooks (agent identities, reputation).
+- [ ] EIP-8141: Frame Tx (0x06) stub in AgentSafeAccount/PolicyEngine.
+- [ ] Uniswap API key + Trading API integration (quotes, routes).
+
+**Person 2 – Agents**
+
+- [ ] Uniswap Yield Agent: proactive rebalancing + Uniswap API (swarmRunner / runtime).
+- [ ] DAO Governance Agent: x402-paid summarization + EIP-8004 reputation.
+- [ ] Security/MEV Agent: QuickNode mempool, sandwich detection, same-nonce replace tx.
+
+**Person 3 – Backend & self-sustaining**
+
+- [ ] x402: real USDC micropayments (Coinbase CDP SDK on Base).
+- [ ] Marketplace `/api/marketplace/request-protection` (x402) + revenue tracking.
+- [ ] Wrapper execution: accept signed userOp from frontend (any wallet).
+
+**Person 4 – Frontend & public URL**
+
+- [ ] Deploy frontend to Vercel (public demo URL).
+- [ ] `/stats` page: wallet balance, compute cost, revenue, agent performance.
+- [ ] Clear “Propose Swap” / MEV protect / governance flows.
+- [ ] Read-only demo mode for judges; “Public Demo” banner + repo link.
+
+**App Agent (optional next)**
+
+- [ ] Real yield allocation from Uniswap agent → App Agent treasury.
+- [ ] Intent/treasury/request-reintent endpoints (see DESIGN-APP-AGENT-PIVOT).
+- [ ] Persistence for apps/metrics (DB or file) if moving beyond hackathon demo.
