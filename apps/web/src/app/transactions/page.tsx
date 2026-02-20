@@ -50,7 +50,6 @@ export default function TransactionsPage() {
         <div className="space-y-3">
           <AgentRow agent="Sentinel" risk="HIGH" reason="Unlimited approval to unverified contract" />
           <AgentRow agent="Scam Detector" risk="HIGH" reason="Contract matches known phishing DB" />
-          <AgentRow agent="MEV Watcher" risk="LOW" reason="No sandwich risk for approval tx" />
           <AgentRow agent="Liquidation" risk="LOW" reason="No lending position affected" />
         </div>
       </div>

@@ -10,14 +10,15 @@ import { paymentsRouter } from './routes/payments.js';
 import { scenesRouter } from './routes/scenes.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { spatialRouter } from './routes/spatial.js';
+import { marketplaceRouter } from './routes/marketplace.js';
 import { requestLogger } from './middleware/logger.js';
 import { readAllLogs } from './storage/logStore.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-/** SwarmGuard agent types (display order) */
-const AGENTS = ['SENTINEL', 'SCAM', 'MEV', 'LIQUIDATION', 'COORDINATOR'];
+/** SwarmGuard agent types (display order). No MEV — approval risk, governance, liquidation only. */
+const AGENTS = ['SENTINEL', 'SCAM', 'LIQUIDATION', 'COORDINATOR'];
 
 // ─── Middleware ──────────────────────────────────────────
 app.use(cors());
@@ -33,6 +34,7 @@ app.use('/api/streams', streamsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/scenes', scenesRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/marketplace', marketplaceRouter);
 app.use('/api/governance', spatialRouter);
 
 // ─── Status (quick liveness + demo metrics) ──────────────
@@ -45,6 +47,20 @@ app.get('/status', (_req, res) => {
     agents: AGENTS,
     logsCount: logs.length,
     runsCount,
+  });
+});
+
+// ─── 404 (must be after all routes) ──────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// ─── Error handler (4-arg middleware; must be last) ─────
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(err.stack);
+  const status = (err as Error & { status?: number }).status ?? 500;
+  res.status(status).json({
+    error: { message: err.message, status },
   });
 });
 

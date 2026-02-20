@@ -9,7 +9,6 @@ export default function PolicyPage() {
       [
         { agentType: 'SENTINEL', severity: 'HIGH', riskScore: 75, recommendation: 'BLOCK' },
         { agentType: 'SCAM', severity: 'LOW', riskScore: 10, recommendation: 'ALLOW' },
-        { agentType: 'MEV', severity: 'LOW', riskScore: 5, recommendation: 'ALLOW' },
         { agentType: 'LIQUIDATION', severity: 'LOW', riskScore: 8, recommendation: 'ALLOW' },
       ],
       null,

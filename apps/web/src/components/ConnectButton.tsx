@@ -1,6 +1,7 @@
 'use client';
 
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { useAccount } from 'wagmi'
+import { useConnect, useDisconnect } from 'wagmi'
 
 const BASE_CHAIN_ID = 8453;
 

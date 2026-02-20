@@ -165,7 +165,7 @@ spatialRouter.post('/proposals/:proposalId/space', async (req, res) => {
       proposalTitle: proposal.title,
       proposalBody: proposal.body,
       skyboxPrompt,
-      agentNames: ['Sentinel', 'ScamDetector', 'MEVWatcher', 'LiquidationPredictor', 'Coordinator'],
+      agentNames: ['Sentinel', 'ScamDetector', 'LiquidationPredictor', 'Coordinator'],
     });
 
     // Compute scene hash

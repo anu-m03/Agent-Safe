@@ -23,8 +23,8 @@
   },
   {
     "id": "proposal-003",
-    "title": "Add new MEV Watcher module to SwarmGuard",
-    "body": "Proposal to integrate an on-chain MEV monitoring module into the SwarmGuard pipeline. This is a non-financial, technical improvement that enhances transaction security for all Safe users.",
+    "title": "Add new monitoring module to SwarmGuard",
+    "body": "Proposal to integrate an on-chain monitoring module into the SwarmGuard pipeline. This is a non-financial, technical improvement that enhances transaction security for all Safe users.",
     "space": "agentsafe.eth",
     "start": 1717200000000,
     "end": 1717804800000,

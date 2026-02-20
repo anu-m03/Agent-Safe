@@ -27,7 +27,8 @@ function getSigner(): { address: string; signMessage: (msg: string) => Promise<s
     const account = privateKeyToAccount(hex);
     return {
       address: account.address,
-      signMessage: (msg: string) => account.signMessage({ message: msg }),
+      signMessage: (msg: string) =>
+        account.signMessage({ message: msg }),
     };
   } catch {
     return null;

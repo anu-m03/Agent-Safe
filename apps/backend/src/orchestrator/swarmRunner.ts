@@ -8,7 +8,6 @@ import crypto from 'node:crypto';
 
 import { evaluateTx as sentinelEval } from '../agents/sentinel.js';
 import { evaluateTx as scamEval } from '../agents/scamDetector.js';
-import { evaluateTx as mevEval } from '../agents/mevWatcher.js';
 import { evaluateTx as liqEval } from '../agents/liquidationPredictor.js';
 import { evaluateTx as coordEval } from '../agents/coordinator.js';
 import { computeConsensus } from './consensus.js';

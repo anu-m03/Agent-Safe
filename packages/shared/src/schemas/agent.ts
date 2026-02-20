@@ -4,7 +4,6 @@ import { z } from 'zod';
 
 export const AgentNameSchema = z.enum([
   'SentinelAgent',
-  'MEVWatcherAgent',
   'LiquidationPredictorAgent',
   'ScamDetectorAgent',
   'CoordinatorAgent',

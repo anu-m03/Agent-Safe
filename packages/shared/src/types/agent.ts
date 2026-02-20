@@ -1,9 +1,8 @@
 // ─── Agent Types ─────────────────────────────────────────
 
-/** Names of all SwarmGuard agents */
+/** Names of all SwarmGuard agents. No MEV — approval risk, governance, liquidation only. */
 export type AgentName =
   | 'SentinelAgent'
-  | 'MEVWatcherAgent'
   | 'LiquidationPredictorAgent'
   | 'ScamDetectorAgent'
   | 'CoordinatorAgent'
@@ -52,8 +51,8 @@ export interface SwarmConsensusDecision {
 
 // ─── SwarmGuard V2 Types (deterministic orchestrator) ────
 
-/** Agent type identifiers */
-export type AgentType = 'SENTINEL' | 'SCAM' | 'MEV' | 'LIQUIDATION' | 'COORDINATOR' | 'DEFENDER';
+/** Agent type identifiers. No MEV. */
+export type AgentType = 'SENTINEL' | 'SCAM' | 'LIQUIDATION' | 'COORDINATOR' | 'DEFENDER';
 
 /** Severity levels */
 export type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';

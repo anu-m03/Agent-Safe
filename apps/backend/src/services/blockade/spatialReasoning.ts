@@ -52,7 +52,7 @@ Based on the proposal content and the spatial prompt, produce ONLY a valid JSON 
 }
 
 Rules:
-- Always include at least 2 zones and 2 agent markers (use Sentinel, ScamDetector, MEVWatcher, LiquidationPredictor, Coordinator)
+- Always include at least 2 zones and 2 agent markers (use Sentinel, ScamDetector, LiquidationPredictor, Coordinator)
 - Severity must reflect the actual proposal risk content
 - The spatial summary must reference specific zones and what they show
 - Do NOT include any text outside the JSON object`;
@@ -214,15 +214,6 @@ function heuristicReasoning(input: SpatialReasoningInput): SpatialReasoningOutpu
       ? 'Treasury/fund keywords found — scanning for social engineering'
       : 'No immediate treasury risk signals',
   });
-
-  if (hasApprovals) {
-    markers.push({
-      agentName: 'MEVWatcher',
-      zone: 'Approval Terminal',
-      severity: 'med',
-      rationale: 'Token approvals may expose MEV extraction vectors',
-    });
-  }
 
   if (hasLiquidation) {
     markers.push({
