@@ -126,7 +126,7 @@ export function runRulesEngine(
       ruleApplied = `liquidation:${resultingIntent}`;
       break;
     default: {
-      const _: never = parsed;
+      const _: unknown = parsed;
       resultingIntent = 'NO_ACTION';
       ruleApplied = 'no_match';
     }

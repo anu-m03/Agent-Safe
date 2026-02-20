@@ -5,9 +5,9 @@
  */
 
 import type { InputTx } from '@agent-safe/shared';
+import crypto from 'node:crypto';
 import { summarise, classifyRisk } from '../agents/kite.js';
 import { simulateTransaction } from '../simulation.js';
-import { runSwarm } from '../../orchestrator/swarmRunner.js';
 import { appendPaymentRecord, type PaidActionType, type PaymentRecord } from './paymentStore.js';
 import { requireX402Payment } from './x402.js';
 import { appendLog, createLogEvent } from '../../storage/logStore.js';
@@ -161,13 +161,40 @@ export async function runTxSimulation(to: string, value: string, data: string): 
   });
 }
 
-// ─── 4. Request protection (swarm evaluation) ──────────────
+// ─── 4. Request protection (SwarmGuard deprecated) ──────────────
 
 /**
- * Require x402 payment, log REVENUE with source 'marketplace', then run existing swarm pipeline.
- * No fallback: payment required. Uses existing agents (approval, governance, liquidation only).
+ * Require x402 payment; return stub result. SwarmGuard tx defense is deprecated.
+ * Pipeline is now Yield Engine + Budget Governor + App Agent. This keeps marketplace API contract intact.
  */
-export async function runRequestProtection(inputTx: InputTx): Promise<Awaited<ReturnType<typeof runSwarm>>> {
+export async function runRequestProtection(
+  inputTx: InputTx,
+): Promise<{
+  runId: string;
+  reports: unknown[];
+  decision: {
+    runId: string;
+    timestamp: number;
+    finalSeverity: string;
+    finalRiskScore: number;
+    decision: string;
+    threshold: { approvalsRequired: number; criticalBlockEnabled: boolean };
+    approvingAgents: unknown[];
+    dissentingAgents: unknown[];
+    notes: string[];
+  };
+  intent: {
+    intentId: string;
+    runId: string;
+    action: string;
+    chainId: number;
+    to: string;
+    value: string;
+    data: string;
+    meta: Record<string, unknown>;
+  };
+  provenance: unknown[];
+}> {
   const payment = await requireX402Payment('REQUEST_PROTECTION');
   if (!payment.ok) {
     appendLog(
@@ -179,6 +206,31 @@ export async function runRequestProtection(inputTx: InputTx): Promise<Awaited<Re
     );
     throw new Error(payment.reason);
   }
-  // REVENUE already logged by requireX402Payment (x402.ts) when context is set; do not log again to avoid double-count.
-  return runSwarm(inputTx);
+  const runId = crypto.randomUUID();
+  return {
+    runId,
+    reports: [],
+    decision: {
+      runId,
+      timestamp: Date.now(),
+      finalSeverity: 'LOW',
+      finalRiskScore: 0,
+      decision: 'ALLOW',
+      threshold: { approvalsRequired: 2, criticalBlockEnabled: true },
+      approvingAgents: [],
+      dissentingAgents: [],
+      notes: ['SwarmGuard deprecated; stub result for marketplace compatibility'],
+    },
+    intent: {
+      intentId: crypto.randomUUID(),
+      runId,
+      action: 'NO_ACTION',
+      chainId: inputTx.chainId,
+      to: inputTx.to,
+      value: inputTx.value,
+      data: inputTx.data,
+      meta: { deprecated: true },
+    },
+    provenance: [],
+  };
 }

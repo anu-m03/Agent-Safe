@@ -79,10 +79,13 @@ export interface HealthResponse {
 }
 
 export interface StatusResponse {
-  agents: number;
+  alive?: boolean;
+  uptime: number;
+  systemPlanes?: string[];
   logsCount: number;
   runsCount: number;
-  uptime: number;
+  /** @deprecated SwarmGuard removed; kept for backward compat */
+  agents?: number;
   [key: string]: unknown;
 }
 
@@ -94,8 +97,9 @@ export function getStatus() {
   return request<StatusResponse>('/status');
 }
 
-// ─── SwarmGuard ──────────────────────────────────────────
+// ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
 
+/** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
 export interface EvaluateTxResponse {
   runId: string;
   reports: AgentRiskReportV2[];
@@ -265,4 +269,130 @@ export function getProposalSpace(proposalId: string) {
 
 export function getSpatialAtlas() {
   return request<SpatialAtlasResponse>('/api/governance/spatial-atlas');
+}
+
+// ─── App Agent (generate, validate, deploy, status, budget) ─
+
+export interface AppIdea {
+  id: string;
+  templateId: string;
+  title: string;
+  description: string;
+  capabilities: string[];
+  userIntent?: string;
+  trendTags?: string[];
+  createdAt?: number;
+}
+
+export interface SafetyCheckResult {
+  passed: boolean;
+  reason?: string;
+  failedCheck?: string;
+}
+
+export interface AppMetrics {
+  users: number;
+  revenueUsd: number;
+  impressions: number;
+  updatedAt: number;
+}
+
+export interface GeneratedApp {
+  id: string;
+  ideaId: string;
+  deploymentUrl: string;
+  status: string;
+  ownerWallet: string;
+  createdAt: number;
+  incubationStartedAt: number;
+  metrics: AppMetrics;
+  revenueShareBps?: number;
+}
+
+export function appAgentGenerate(userIntent?: string) {
+  return request<AppIdea>('/api/app-agent/generate', {
+    method: 'POST',
+    body: JSON.stringify(userIntent != null ? { userIntent } : {}),
+  });
+}
+
+export function appAgentValidate(idea: AppIdea) {
+  return request<SafetyCheckResult>('/api/app-agent/validate', {
+    method: 'POST',
+    body: JSON.stringify(idea),
+  });
+}
+
+export function appAgentDeploy(idea: AppIdea, ownerWallet?: string) {
+  return request<{ ok: true; app: GeneratedApp } | { ok: false; error: string }>('/api/app-agent/deploy', {
+    method: 'POST',
+    body: JSON.stringify({ idea, ownerWallet: ownerWallet ?? '0x0000000000000000000000000000000000000000' }),
+  });
+}
+
+export function getAppAgentStatus(appId: string) {
+  return request<{
+    app: GeneratedApp;
+    incubationDecision: { nextStatus: string; reason: string };
+  }>(`/api/app-agent/${encodeURIComponent(appId)}/status`);
+}
+
+export interface BudgetStateResponse {
+  treasuryUsd: number;
+  dailyBurnUsd: number;
+  runwayDays: number;
+  [key: string]: unknown;
+}
+
+export function getAppAgentBudget() {
+  return request<BudgetStateResponse>('/api/app-agent/budget');
+}
+
+export function listAppAgentApps() {
+  return request<{ apps: GeneratedApp[] }>('/api/app-agent/apps');
+}
+
+// ─── App Agent init + run-cycle (autonomous demo) ────────
+
+export interface AppAgentInitResponse {
+  sessionId: string;
+  budget: { perAppUsd: number; dailyBurnLimit: number; runwayDays: number };
+  intent?: string;
+  createdAt: number;
+  alreadyInitialized?: boolean;
+}
+
+export function appAgentInit(walletAddress: string, intent?: string) {
+  return request<AppAgentInitResponse>('/api/app-agent/init', {
+    method: 'POST',
+    body: JSON.stringify({ walletAddress, intent }),
+  });
+}
+
+export interface RunCycleResponse {
+  appId: string;
+  status: 'DEPLOYED' | 'REJECTED' | 'BUDGET_BLOCKED';
+  idea: Record<string, unknown>;
+  budgetRemaining: number;
+  pipelineLogs?: Array<{ step: string; ok: boolean; reason?: string; [key: string]: unknown }>;
+  baseNative?: { chain: string; lowFeeMode: boolean; attributionReady: boolean };
+}
+
+export function appAgentRunCycle(walletAddress: string, intent?: string) {
+  return request<RunCycleResponse>('/api/app-agent/run-cycle', {
+    method: 'POST',
+    body: JSON.stringify({ walletAddress, intent }),
+  });
+}
+
+export interface AppAgentStatusResponse {
+  appId: string;
+  status: string;
+  metrics: { users: number; revenue: number; impressions: number };
+  supportStatus: 'ACTIVE' | 'SUNSET' | 'HANDED_TO_USER';
+}
+
+/** Poll app status (e.g. every 10s). */
+export function getAppAgentStatusPoll(appId: string) {
+  return request<AppAgentStatusResponse>(`/api/app-agent/${encodeURIComponent(appId)}/status`);
 }

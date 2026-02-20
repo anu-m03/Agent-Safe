@@ -13,7 +13,7 @@ export const api = {
     return res.json();
   },
 
-  /** Evaluate a transaction through SwarmGuard */
+  /** @deprecated SwarmGuard removed. Use backendClient.evaluateTx only if backend restores route, or use marketplace/request-protection / execution. */
   async evaluateTx(txData: {
     to: string;
     value: string;
@@ -27,7 +27,7 @@ export const api = {
     return res.json();
   },
 
-  /** Fetch swarm audit logs */
+  /** @deprecated SwarmGuard removed. Use backendClient.getSwarmLogs only if backend restores /api/swarm/logs. */
   async getSwarmLogs(): Promise<{ logs: AuditLogEntry[] }> {
     const res = await fetch(`${API_BASE}/api/swarm/logs`);
     return res.json();

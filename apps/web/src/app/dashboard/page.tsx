@@ -1,21 +1,45 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { getHealth, getStatus, getProposals, type HealthResponse, type StatusResponse } from '@/services/backendClient';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useAccount } from 'wagmi';
+import {
+  getHealth,
+  getStatus,
+  getProposals,
+  appAgentInit,
+  appAgentRunCycle,
+  getAppAgentStatusPoll,
+  type HealthResponse,
+  type StatusResponse,
+} from '@/services/backendClient';
 import { StatusCard } from '@/components/StatusCard';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import Link from 'next/link';
 
+const POLL_INTERVAL_MS = 10_000;
+
 export default function DashboardPage() {
+  const { address: walletAddress } = useAccount();
+  const initDoneRef = useRef(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [proposalCount, setProposalCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedBuilderCode, setCopiedBuilderCode] = useState(false);
-  const [yieldLoading, setYieldLoading] = useState(false);
-  const [yieldRecommendation, setYieldRecommendation] = useState<string | null>(null);
-  const [yieldError, setYieldError] = useState<string | null>(null);
+  const [cycleLoading, setCycleLoading] = useState(false);
+  const [cycleError, setCycleError] = useState<string | null>(null);
+  const [lastRunResult, setLastRunResult] = useState<{
+    appId: string;
+    status: string;
+    budgetRemaining: number;
+  } | null>(null);
+  const [appStatus, setAppStatus] = useState<{
+    appId: string;
+    status: string;
+    metrics: { users: number; revenue: number; impressions: number };
+    supportStatus: string;
+  } | null>(null);
   const builderCode = process.env.NEXT_PUBLIC_BASE_BUILDER_CODE || 'agentsafe42';
   const builderBadgeText = `Builder Code: ${builderCode} – All txs attributed on Base`;
 
@@ -38,42 +62,55 @@ export default function DashboardPage() {
     }
   }, [builderBadgeText]);
 
-  const checkYieldOpportunity = useCallback(async () => {
-    setYieldLoading(true);
-    setYieldError(null);
-    setYieldRecommendation(null);
+  // App Agent init once per session when wallet is connected
+  useEffect(() => {
+    if (!walletAddress || initDoneRef.current) return;
+    initDoneRef.current = true;
+    appAgentInit(walletAddress)
+      .then(() => {})
+      .catch(() => {});
+  }, [walletAddress]);
 
-    try {
-      const res = await fetch('/api/swarm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          intent: 'uniswap',
-          chain: 'base',
-          visibility: 'public',
-        }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => 'Request failed');
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-
-      const data = (await res.json()) as Record<string, unknown>;
-      const recommendation = extractYieldRecommendation(data);
-      setYieldRecommendation(recommendation);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch yield suggestion.';
-      setYieldError(message);
-    } finally {
-      setYieldLoading(false);
+  const runCycle = useCallback(async () => {
+    if (!walletAddress) {
+      setCycleError('Connect wallet to run App Agent cycle');
+      return;
     }
-  }, []);
+    setCycleLoading(true);
+    setCycleError(null);
+    setLastRunResult(null);
+    setAppStatus(null);
+    const result = await appAgentRunCycle(walletAddress);
+    setCycleLoading(false);
+    if (result.ok) {
+      setLastRunResult({
+        appId: result.data.appId,
+        status: result.data.status,
+        budgetRemaining: result.data.budgetRemaining,
+      });
+      if (result.data.status === 'DEPLOYED' && result.data.appId) {
+        const statusRes = await getAppAgentStatusPoll(result.data.appId);
+        if (statusRes.ok) setAppStatus(statusRes.data);
+      }
+    } else {
+      setCycleError(result.error);
+    }
+  }, [walletAddress]);
+
+  // Poll status when we have a deployed appId
+  useEffect(() => {
+    if (!lastRunResult?.appId || lastRunResult.status !== 'DEPLOYED') return;
+    const id = setInterval(async () => {
+      const res = await getAppAgentStatusPoll(lastRunResult.appId);
+      if (res.ok) setAppStatus(res.data);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [lastRunResult?.appId, lastRunResult?.status]);
 
   useEffect(() => { load(); }, [load]);
 
   const swarmOk = health?.status === 'ok';
-  const agentCount = status?.agents ?? 0;
+  const agentCount = status?.systemPlanes?.length ?? status?.agents ?? 0;
 
   return (
     <div className="space-y-8">
@@ -84,7 +121,7 @@ export default function DashboardPage() {
             Dashboard
           </h2>
           <p className="text-gray-400">
-            AgentSafe + SwarmGuard overview — Real-time multi-agent protection
+            AgentSafe — Yield Engine, Budget Governor, App Agent (autonomous mini-app factory)
           </p>
           <button
             type="button"
@@ -141,9 +178,9 @@ export default function DashboardPage() {
               delay={0}
             />
             <StatusCard
-              title="Active Agents"
-              value={agentCount ? `${agentCount} / 6` : '—'}
-              subtitle="SwarmGuard pipeline"
+              title="System Planes"
+              value={agentCount ? String(agentCount) : '—'}
+              subtitle="Yield · Budget · App Agent"
               color="blue"
               delay={100}
             />
@@ -172,7 +209,7 @@ export default function DashboardPage() {
           <QuickLink
             href="/defense"
             title="Defense"
-            description="Evaluate transactions through SwarmGuard"
+            description="Policy & execution (marketplace, relay)"
             icon="🛡️"
             delay={400}
           />
@@ -200,36 +237,46 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Uniswap Yield Suggestion */}
+      {/* App Agent — One-click autonomous cycle (SwarmGuard removed) */}
       <div className="rounded-xl border border-emerald-800/60 bg-gradient-to-br from-emerald-900/20 to-safe-card p-6 shadow-xl">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-white">Uniswap Yield Suggestion</h3>
+            <h3 className="text-lg font-semibold text-white">App Agent — Run Cycle</h3>
             <p className="mt-1 text-sm text-emerald-200/80">
-              Public yield check on Base with no login required.
+              One-click autonomous mini-app factory. Connect wallet, then run cycle. Status polls every 10s.
             </p>
           </div>
           <button
             type="button"
-            onClick={checkYieldOpportunity}
-            disabled={yieldLoading}
+            onClick={runCycle}
+            disabled={cycleLoading || !walletAddress}
             className="rounded-lg border border-emerald-700 bg-emerald-900/40 px-4 py-2 text-sm font-medium text-emerald-200 transition-colors hover:bg-emerald-900/60 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {yieldLoading ? 'Checking…' : 'Check Yield Opportunity'}
+            {cycleLoading ? 'Running…' : walletAddress ? 'Run App Agent Cycle' : 'Connect wallet'}
           </button>
         </div>
 
-        {yieldRecommendation && (
+        {lastRunResult && (
           <div className="rounded-lg border border-emerald-800/70 bg-emerald-950/30 p-4">
-            <p className="mb-2 text-xs uppercase tracking-wide text-emerald-300">Agent Recommendation</p>
-            <p className="text-sm text-emerald-100">{yieldRecommendation}</p>
-            <p className="mt-3 text-sm font-medium text-white">Sign with your connected wallet</p>
+            <p className="mb-2 text-xs uppercase tracking-wide text-emerald-300">Last run</p>
+            <p className="text-sm text-emerald-100">
+              App ID: <span className="font-mono">{lastRunResult.appId}</span> · Status: <span className="font-medium">{lastRunResult.status}</span> · Budget remaining: ${lastRunResult.budgetRemaining}
+            </p>
           </div>
         )}
 
-        {yieldError && (
+        {appStatus && (
+          <div className="mt-3 rounded-lg border border-emerald-800/70 bg-emerald-950/30 p-4">
+            <p className="mb-2 text-xs uppercase tracking-wide text-emerald-300">App status (polling)</p>
+            <p className="text-sm text-emerald-100">
+              Users: {appStatus.metrics.users} · Revenue: {appStatus.metrics.revenue} · Impressions: {appStatus.metrics.impressions} · Support: {appStatus.supportStatus}
+            </p>
+          </div>
+        )}
+
+        {cycleError && (
           <div className="rounded-lg border border-red-800 bg-red-900/20 p-3 text-sm text-safe-red">
-            Unable to fetch Uniswap suggestion: {yieldError}
+            {cycleError}
           </div>
         )}
       </div>
@@ -276,44 +323,6 @@ export default function DashboardPage() {
       </div>
     </div>
   );
-}
-
-function extractYieldRecommendation(data: Record<string, unknown>): string {
-  if (typeof data.recommendation === 'string' && data.recommendation.trim()) {
-    return data.recommendation;
-  }
-
-  const intent = isObject(data.intent) ? data.intent : null;
-  const intentMeta = intent && isObject(intent.meta) ? intent.meta : null;
-  if (intentMeta && typeof intentMeta.summary === 'string' && intentMeta.summary.trim()) {
-    return intentMeta.summary;
-  }
-
-  const reports = Array.isArray(data.reports) ? data.reports : null;
-  if (reports) {
-    const uniswapReport = reports.find((report) => {
-      if (!isObject(report) || typeof report.agent !== 'string') return false;
-      return report.agent.toLowerCase() === 'uniswap';
-    });
-    if (
-      isObject(uniswapReport) &&
-      Array.isArray(uniswapReport.rationale) &&
-      typeof uniswapReport.rationale[0] === 'string' &&
-      uniswapReport.rationale[0].trim()
-    ) {
-      return uniswapReport.rationale[0];
-    }
-  }
-
-  if (typeof data.message === 'string' && data.message.trim()) {
-    return data.message;
-  }
-
-  return 'Yield opportunity identified on Uniswap. Review terms, then sign with your connected wallet.';
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function QuickLink({

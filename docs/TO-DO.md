@@ -1,7 +1,3 @@
-**Backend current state (Person 3):** See `docs/PROJECT-STATE-PERSON3-BACKEND.md` for x402, marketplace, execution, and next actions.
-
----
-
 **Yes — perfect pivot to "AgentSafe as intelligent wallet wrapper / co-pilot dApp"** makes everything cleaner, safer, and 100% judge-friendly for ETHDenver 2026.
 
 Users simply **connect their existing wallet** (EOA or any smart account) via wagmi on the public frontend. Your app becomes the overlay:
@@ -12,12 +8,6 @@ Users simply **connect their existing wallet** (EOA or any smart account) via wa
 - Backend never holds keys — only orchestrates intents/userOps.
 
 This gives you a **fully public URL** with zero risk. Judges connect their own test wallet (or use read-only mode) and interact instantly.
-
-- WE ARE ONLY dealing with these 3 risks:
-Unlimited / Malicious Approvals
-Governance Proposal Risk Analysis
-Liquidation Prevention
-
 
 ### Final Adjusted Team Split (4 Undergrads, <1 Week)
 
@@ -55,8 +45,8 @@ Focus: The three core agents + creative/self-sustaining logic.
 **Person 3: Backend & Self-Sustaining Lead(Anu)**
 Focus: x402 revenue loop + wrapper execution.
 
-- Complete x402 (beyond stub in `x402.ts`): Use Coinbase CDP SDK for real USDC micropayments on Base. Agents now charge tiny fees  via x402 header. Revenue auto-sweeps to operator wallet → pays for Gemini/Kite compute.
-- Novel self-sustaining twist (beyond existing projects): "Agent Marketplace" route (`/api/marketplace/request-protection`). External users/agents pay x402 to get your MEV/Governance swarm on their tx. Revenue tracked in analytics.
+- Complete x402 (beyond stub in `x402.ts`): Use Coinbase CDP SDK for real USDC micropayments on Base. Agents now charge tiny fees (e.g., $0.01 per MEV check or governance summary) via x402 header. Revenue auto-sweeps to operator wallet → pays for Gemini/Kite compute.
+- Novel self-sustaining twist (beyond existing projects): "Agent Marketplace" route (`/api/marketplace/request-protection`). External users/agents pay x402 to get your Governance swarm on their tx. Revenue tracked in analytics.
 - Wrapper execution: In `executionService.ts` accept signed userOp from **connected wallet** (via frontend). No longer assumes AgentSafeAccount is the only signer.
   Deliverable: Bot runs 24/7 on its own revenue (show live balance vs compute cost).
 
@@ -80,7 +70,6 @@ Focus: Public demo + intuitive UX.
 - **ERC-8021**: Every agent-executed tx includes the code → analytics dashboard shows attributed volume.
 - **Self-sustaining agents**: x402 micropayments + marketplace + EIP-8004 reputation = revenue > compute cost (show numbers on /stats). Novel because agents earn by protecting others too.
 - **Uniswap agent**: Creative proactive yield optimizer + API integration → functional swaps on testnet/mainnet.
-- **MEV protection**: Real same-nonce intercept (autonomous & fast via bundler).
 - **Governance agent**: Already solid, now paid & reputation-weighted.
 - **x402 + EIP-8004**: Fully integrated for payments + onchain agent identity.
 - **EIP-8141**: Simulated in contracts + demo note ("ready for Hegota").
@@ -91,3 +80,11 @@ This wrapper model is exactly how winning AA/agent projects demo (e.g., public c
 Do the 1-hour fixes first (type mismatches, syntax bugs), then parallelize. You’ll have a polished, revenue-generating, public demo ready for Feb 20-21 judging.
 
 Need the exact Vercel deploy steps, a sample /stats page code, or the MEV same-nonce script snippet? Just say the word — we ship this. 🚀
+
+---
+
+### App Agent pivot (second agent)
+
+**Design doc:** `docs/DESIGN-APP-AGENT-PIVOT.md`
+
+Pivot the second agent to an **autonomous Base mini-app creator** funded by Uniswap yield, with stop-support (metrics/time), hand-back to user with revenue share, and optional user intent. That doc lists all required **backend and system architecture** changes: data model, services (yield allocation, trends, mini-app creation/deployment, metrics, lifecycle), new App Agent, routes, funding flow, config, and shared types/schemas.

@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { healthRouter } from './routes/health.js';
-import { swarmRouter } from './routes/swarm.js';
 import { governanceRouter } from './routes/governance.js';
 import { executionRouter } from './routes/execution.js';
 import { streamsRouter } from './routes/streams.js';
@@ -17,14 +16,15 @@ import { agentExecuteRouter } from './routes/agentExecute.js';
 import { sessionRouter } from './routes/sessionRoutes.js';
 import { streamsIngestRouter } from './routes/streamsIngest.js';
 import { uniswapRouter } from './routes/uniswap.js';
+import { appAgentRouter } from './routes/appAgent.js';
 import { requestLogger } from './middleware/logger.js';
 import { readAllLogs } from './storage/logStore.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-/** SwarmGuard agent types (display order). No MEV — approval risk, governance, liquidation only. */
-const AGENTS = ['SENTINEL', 'SCAM', 'LIQUIDATION', 'COORDINATOR'];
+/** System planes: Yield Engine (Uniswap), Budget Governor, App Agent. SwarmGuard deprecated. */
+const SYSTEM_PLANES = ['YIELD_ENGINE', 'BUDGET_GOVERNOR', 'APP_AGENT'];
 
 // ─── Middleware ──────────────────────────────────────────
 app.use(cors());
@@ -33,7 +33,6 @@ app.use(requestLogger);
 
 // ─── Routes ─────────────────────────────────────────────
 app.use('/', healthRouter);
-app.use('/api/swarm', swarmRouter);
 app.use('/api/governance', governanceRouter);
 app.use('/api', executionRouter);
 app.use('/api/streams', streamsRouter);
@@ -50,6 +49,7 @@ app.use('/api/agents', agentExecuteRouter);
 app.use('/api/agents/session', sessionRouter);
 app.use('/api/streams', streamsIngestRouter);
 app.use('/api/uniswap', uniswapRouter);
+app.use('/api/app-agent', appAgentRouter);
 
 // ─── Status (quick liveness + demo metrics) ──────────────
 app.get('/status', (_req, res) => {
@@ -58,7 +58,7 @@ app.get('/status', (_req, res) => {
   res.json({
     alive: true,
     uptime: process.uptime(),
-    agents: AGENTS,
+    systemPlanes: SYSTEM_PLANES,
     logsCount: logs.length,
     runsCount,
   });

@@ -50,9 +50,11 @@ export async function verifyPaymentOnBase(
     for (const log of receipt.logs) {
       if (log.address.toLowerCase() !== usdcAddress.toLowerCase()) continue;
       if (log.topics[0] !== TransferTopic || log.topics.length < 3) continue;
-      const to = ('0x' + log.topics[2].slice(26)) as `0x${string}`;
+      const topic2 = log.topics[2];
+      if (!topic2) continue;
+      const to = ('0x' + topic2.slice(26)) as `0x${string}`;
       if (to.toLowerCase() !== operator) continue;
-      const amount = BigInt(log.data);
+      const amount = BigInt(log.data ?? '0');
       transferredToOperator += amount;
     }
 
