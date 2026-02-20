@@ -7,7 +7,7 @@
 import type { InputTx } from '@agent-safe/shared';
 import { summarise, classifyRisk } from '../agents/kite.js';
 import { simulateTransaction } from '../simulation.js';
-import { runSwarm } from '../orchestrator/swarmRunner.js';
+import { runSwarm } from '../../orchestrator/swarmRunner.js';
 import { appendPaymentRecord, type PaidActionType, type PaymentRecord } from './paymentStore.js';
 import { requireX402Payment } from './x402.js';
 import { appendLog, createLogEvent } from '../../storage/logStore.js';

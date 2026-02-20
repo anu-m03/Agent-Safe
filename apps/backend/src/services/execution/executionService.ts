@@ -4,15 +4,8 @@
  * If ProvenanceRegistry unavailable → Kite-only provenance label. Return includes provenanceTxHashes.
  */
 
-import {
-  createPublicClient,
-  http,
-  type Hash,
-  type Hex,
-  parseGwei,
-  signMessage,
-  privateKeyToAccount,
-} from 'viem';
+import { createPublicClient, http, type Hash, type Hex, parseGwei } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
 import type { ActionIntent } from '@agent-safe/shared';
 import { getDeployment, validateChainId } from '../../config/deployment.js';
@@ -162,8 +155,7 @@ export async function executeIntent(intent: ActionIntent): Promise<ExecutionResu
     }
 
     const message = userOpHash;
-    const signature = await signMessage({
-      account: signer,
+    const signature = await signer.signMessage({
       message: { raw: message },
     });
 

@@ -50,6 +50,20 @@ app.get('/status', (_req, res) => {
   });
 });
 
+// ─── 404 (must be after all routes) ──────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// ─── Error handler (4-arg middleware; must be last) ─────
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(err.stack);
+  const status = (err as Error & { status?: number }).status ?? 500;
+  res.status(status).json({
+    error: { message: err.message, status },
+  });
+});
+
 // ─── Start ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🛡️  AgentSafe backend running on http://localhost:${PORT}`);
