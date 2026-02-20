@@ -10,9 +10,8 @@ import {
   type Hash,
   type Hex,
   parseGwei,
-  signMessage,
-  privateKeyToAccount,
 } from 'viem';
+import { privateKeyToAccount, signMessage } from 'viem/accounts';
 import { base } from 'viem/chains';
 import type { ActionIntent } from '@agent-safe/shared';
 import { getDeployment, validateChainId } from '../../config/deployment.js';

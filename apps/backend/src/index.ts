@@ -10,6 +10,9 @@ import { paymentsRouter } from './routes/payments.js';
 import { scenesRouter } from './routes/scenes.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { spatialRouter } from './routes/spatial.js';
+import { agentsRouter } from './routes/agentsRun.js';
+import { streamsIngestRouter } from './routes/streamsIngest.js';
+import { uniswapRouter } from './routes/uniswap.js';
 import { requestLogger } from './middleware/logger.js';
 import { readAllLogs } from './storage/logStore.js';
 
@@ -34,6 +37,11 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/scenes', scenesRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/governance', spatialRouter);
+
+// ─── Event-Driven Agent Routes ──────────────────────────
+app.use('/api/agents', agentsRouter);
+app.use('/api/streams', streamsIngestRouter);
+app.use('/api/uniswap', uniswapRouter);
 
 // ─── Status (quick liveness + demo metrics) ──────────────
 app.get('/status', (_req, res) => {

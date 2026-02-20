@@ -250,6 +250,7 @@ export function executeVote(voteId: string) {
     method: 'POST',
     body: JSON.stringify({ voteId }),
   });
+}
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {
