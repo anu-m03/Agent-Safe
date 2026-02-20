@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSwapQuote, UNISWAP_TOKENS } from '../services/uniswapApi.js';
+import { getSwapQuote, getSwapTx, UNISWAP_TOKENS, UniswapApiError } from '../services/uniswapApi.js';
 
 export const uniswapRouter = Router();
 
@@ -96,6 +96,80 @@ uniswapRouter.get('/quote', async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: 'Quote fetch failed',
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// ─── POST /api/uniswap/swap-tx ──────────────────────────
+// Returns an unsigned swap transaction payload for client-side signing.
+//
+// curl example:
+//   curl -X POST http://localhost:4000/api/uniswap/swap-tx \
+//     -H 'Content-Type: application/json' \
+//     -d '{
+//       "tokenIn": "WETH",
+//       "tokenOut": "USDC",
+//       "amountIn": "100000000000000000",
+//       "slippageBps": 50,
+//       "swapper": "0x2E2Da4311Ea87Cfa31c372D59B4A0d567c15D760"
+//     }'
+
+const SwapTxRequestSchema = z.object({
+  tokenIn: z.string(),
+  tokenOut: z.string(),
+  amountIn: z.string().regex(/^\d+$/, 'amountIn must be a decimal string (wei/base-units)'),
+  slippageBps: z.number().int().min(1).max(1000).optional(),
+  swapper: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'swapper must be a valid 0x address'),
+  recipient: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'recipient must be a valid 0x address').optional(),
+});
+
+uniswapRouter.post('/swap-tx', async (req, res) => {
+  const parsed = SwapTxRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid request body',
+      details: parsed.error.flatten(),
+    });
+  }
+
+  const { tokenIn, tokenOut, amountIn, slippageBps, swapper, recipient } = parsed.data;
+
+  // Resolve & enforce token allowlist
+  const resolvedIn = resolveToken(tokenIn);
+  const resolvedOut = resolveToken(tokenOut);
+
+  if (!resolvedIn) {
+    return res.status(400).json({
+      ok: false,
+      error: `Unknown or disallowed tokenIn: ${tokenIn}. Allowed: ${Object.keys(TOKEN_MAP).join(', ')}`,
+    });
+  }
+  if (!resolvedOut) {
+    return res.status(400).json({
+      ok: false,
+      error: `Unknown or disallowed tokenOut: ${tokenOut}. Allowed: ${Object.keys(TOKEN_MAP).join(', ')}`,
+    });
+  }
+
+  try {
+    const tx = await getSwapTx(
+      resolvedIn,
+      resolvedOut,
+      amountIn,
+      slippageBps,
+      swapper,
+      recipient,
+    );
+
+    return res.json({ ok: true, tx });
+  } catch (err) {
+    console.error(`[/api/uniswap/swap-tx] Error:`, err);
+    const status = err instanceof UniswapApiError ? 502 : 500;
+    return res.status(status).json({
+      ok: false,
+      error: 'Swap transaction fetch failed',
       message: err instanceof Error ? err.message : String(err),
     });
   }

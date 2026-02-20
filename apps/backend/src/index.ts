@@ -11,6 +11,9 @@ import { scenesRouter } from './routes/scenes.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { spatialRouter } from './routes/spatial.js';
 import { agentsRouter } from './routes/agentsRun.js';
+import { agentDecideRouter } from './routes/agentDecide.js';
+import { agentExecuteRouter } from './routes/agentExecute.js';
+import { sessionRouter } from './routes/sessionRoutes.js';
 import { streamsIngestRouter } from './routes/streamsIngest.js';
 import { uniswapRouter } from './routes/uniswap.js';
 import { requestLogger } from './middleware/logger.js';
@@ -40,6 +43,9 @@ app.use('/api/governance', spatialRouter);
 
 // ─── Event-Driven Agent Routes ──────────────────────────
 app.use('/api/agents', agentsRouter);
+app.use('/api/agents', agentDecideRouter);
+app.use('/api/agents', agentExecuteRouter);
+app.use('/api/agents/session', sessionRouter);
 app.use('/api/streams', streamsIngestRouter);
 app.use('/api/uniswap', uniswapRouter);
 

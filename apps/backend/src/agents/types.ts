@@ -95,6 +95,24 @@ export interface UniswapQuote {
   expiresAt: number;
 }
 
+// ─── Uniswap Swap Transaction Payload ───────────────────
+// Unsigned tx returned to the client for wallet-side signing.
+
+export interface UniswapSwapTx {
+  /** Contract to call (Uniswap router) */
+  to: string;
+  /** ABI-encoded swap calldata */
+  data: string;
+  /** Native value to send (hex string, e.g. "0x0") */
+  value: string;
+  /** Target chain */
+  chainId: number;
+  /** Optional gas fields — included when Uniswap provides them */
+  gasLimit?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+}
+
 // ─── Governance Proposal Input ──────────────────────────
 
 export interface GovernanceProposalInput {
