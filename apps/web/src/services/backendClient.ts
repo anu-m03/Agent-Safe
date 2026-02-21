@@ -396,3 +396,68 @@ export interface AppAgentStatusResponse {
 export function getAppAgentStatusPoll(appId: string) {
   return request<AppAgentStatusResponse>(`/api/app-agent/${encodeURIComponent(appId)}/status`);
 }
+
+// ─── App Evolution Atlas (Blockade Labs) ─────────────────
+
+export interface AppSpatialZone {
+  zone: string;
+  meaning: string;
+  domain: 'Yield' | 'Engagement' | 'Safety' | 'Innovation' | 'Revenue';
+}
+
+export interface AppSpatialMarker {
+  agentName: string;
+  zone: string;
+  severity: 'low' | 'med' | 'high';
+  rationale: string;
+}
+
+export interface AppSpatialMemory {
+  appId: string;
+  ideaId: string;
+  sceneId: number;
+  sceneHash: string;
+  prompt: string;
+  fileUrl: string;
+  thumbUrl: string;
+  createdAt: string;
+  trendTags: string[];
+  title: string;
+  status: string;
+  metrics: { users: number; revenueUsd: number; impressions: number };
+  detectedZones: AppSpatialZone[];
+  agentMarkers: AppSpatialMarker[];
+  spatialSummary: string;
+  evolutionNote: string;
+  status_spatial: 'pending' | 'processing' | 'complete' | 'error';
+  errorMessage?: string;
+}
+
+export interface AppAtlasResponse {
+  count: number;
+  atlas: AppSpatialMemory[];
+  evolutionContext: Array<{
+    appId: string;
+    title: string;
+    trendTags: string[];
+    status: string;
+    metrics: { users: number; revenueUsd: number; impressions: number };
+    spatialSummary: string;
+    evolutionNote: string;
+    sceneHash: string;
+    createdAt: string;
+  }>;
+}
+
+/** Fetch the full App Evolution Atlas. */
+export function getAppEvolutionAtlas() {
+  return request<AppAtlasResponse>('/api/app-agent/atlas');
+}
+
+/** Trigger (or get cached) skybox for a specific app. */
+export function triggerAppSpace(appId: string, regenerate = false) {
+  return request<{ cached?: boolean; status?: string; memory?: AppSpatialMemory }>(
+    `/api/app-agent/${encodeURIComponent(appId)}/space`,
+    { method: 'POST', body: JSON.stringify({ regenerate }) },
+  );
+}
