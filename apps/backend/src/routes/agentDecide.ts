@@ -24,6 +24,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   getSwapQuote,
+  UNISWAP_CHAIN_ID,
   UNISWAP_TOKENS,
   UniswapApiError,
 } from '../services/uniswapApi.js';
@@ -81,7 +82,6 @@ const DecideRequestSchema = z.object({
 
 // ─── Defaults ───────────────────────────────────────────
 
-const CHAIN_ID = 84532; // Base Sepolia
 const DEFAULT_MAX_PRICE_IMPACT_BPS = 500; // 5%
 
 // ─── Rules Fallback ─────────────────────────────────────
@@ -199,7 +199,7 @@ agentDecideRouter.post('/uniswap/decide', async (req, res) => {
 
   // 4. Build context for Gemini (read-only observation — no secrets)
   const context: DecisionContext = {
-    chainId: CHAIN_ID,
+    chainId: UNISWAP_CHAIN_ID,
     swapper,
     goal,
     supportedTokens: ALLOWED_SYMBOLS,
