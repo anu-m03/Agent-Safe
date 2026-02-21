@@ -79,9 +79,13 @@ export interface HealthResponse {
 }
 
 export interface StatusResponse {
+<<<<<<< HEAD
   alive?: boolean;
   uptime: number;
   systemPlanes?: string[];
+=======
+  agents: number | string[];
+>>>>>>> 2876e3ac (frontend v5)
   logsCount: number;
   runsCount: number;
   /** @deprecated SwarmGuard removed; kept for backward compat */
@@ -97,7 +101,43 @@ export function getStatus() {
   return request<StatusResponse>('/status');
 }
 
+<<<<<<< HEAD
 // ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
+=======
+export interface AnalyticsSummaryResponse {
+  gasSpentWei: string;
+  x402SpendWei: string;
+  revenueWei: string;
+  actionsLast24h: number;
+  actionsPerDay: number;
+  actionsTotal: number;
+  costPerActionWei: string;
+  netRunwayWei: string;
+  _source: 'logs';
+}
+
+export function getAnalyticsSummary() {
+  return request<AnalyticsSummaryResponse>('/api/analytics/summary');
+}
+
+export interface PaymentsResponse {
+  ok: true;
+  payments: Array<{
+    id: string;
+    actionType: string;
+    paymentTxHash: string;
+    result: unknown;
+    timestamp: number;
+    fallbackUsed: boolean;
+  }>;
+}
+
+export function getPayments(limit = 100) {
+  return request<PaymentsResponse>(`/api/payments?limit=${limit}`);
+}
+
+// ─── SwarmGuard ──────────────────────────────────────────
+>>>>>>> 2876e3ac (frontend v5)
 
 /** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
 export interface EvaluateTxResponse {
@@ -255,6 +295,10 @@ export function executeVote(voteId: string) {
     body: JSON.stringify({ voteId }),
   });
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2876e3ac (frontend v5)
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {
@@ -271,6 +315,7 @@ export function getSpatialAtlas() {
   return request<SpatialAtlasResponse>('/api/governance/spatial-atlas');
 }
 
+<<<<<<< HEAD
 // ─── App Agent (generate, validate, deploy, status, budget) ─
 
 export interface AppIdea {
@@ -460,4 +505,37 @@ export function triggerAppSpace(appId: string, regenerate = false) {
     `/api/app-agent/${encodeURIComponent(appId)}/space`,
     { method: 'POST', body: JSON.stringify({ regenerate }) },
   );
+=======
+// ─── Streams (Liquidation signals) ───────────────────────
+
+export interface StreamEvent {
+  id: string;
+  timestamp: number;
+  healthFactor: number;
+  protocol: string;
+  debtPosition: string;
+  chainId?: number;
+  raw?: Record<string, unknown>;
+}
+
+export interface LiquidationAlert {
+  id: string;
+  timestamp: number;
+  eventId: string;
+  healthFactor: number;
+  protocol: string;
+  debtPosition: string;
+  intent: 'LIQUIDATION_REPAY' | 'LIQUIDATION_ADD_COLLATERAL';
+  shortfallAmount?: string;
+  perTxCapRespected: boolean;
+  dailyAdvisoryCapNote?: string;
+}
+
+export function getStreamEvents(limit = 20) {
+  return request<{ events: StreamEvent[] }>(`/api/streams/events?limit=${limit}`);
+}
+
+export function getStreamAlerts(limit = 20) {
+  return request<{ alerts: LiquidationAlert[] }>(`/api/streams/alerts?limit=${limit}`);
+>>>>>>> 2876e3ac (frontend v5)
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckCircle2 } from 'lucide-react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'success';
@@ -63,7 +64,10 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
       onClick={handleCopy}
       className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 transition-all hover:bg-gray-700 hover:text-white"
     >
-      {copied ? '✓ Copied' : `📋 ${label}`}
+      <span className="inline-flex items-center gap-1.5">
+        {copied && <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
+        {copied ? 'Copied' : `${label}`}
+      </span>
     </button>
   );
 }

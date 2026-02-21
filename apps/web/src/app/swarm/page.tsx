@@ -7,7 +7,7 @@ export default function SwarmPage() {
     {
       time: '14:23:01',
       agent: 'Sentinel',
-      message: '🔍 Detected ERC-20 approve() call to unverified spender 0xBAD...1234',
+      message: 'Detected ERC-20 approve() call to unverified spender 0xBAD...1234',
       type: 'alert' as const,
     },
     {
@@ -19,37 +19,50 @@ export default function SwarmPage() {
     {
       time: '14:23:02',
       agent: 'Scam Detector',
-      message: '🔎 Checking contract 0xBAD...1234 against blacklist databases...',
+      message: 'Checking contract 0xBAD...1234 against blacklist databases...',
       type: 'info' as const,
     },
     {
       time: '14:23:02',
       agent: 'Scam Detector',
-      message: '🚨 MATCH FOUND: Contract flagged in Etherscan phishing database. Risk: HIGH.',
+      message: 'MATCH FOUND: Contract flagged in Etherscan phishing database. Risk: HIGH.',
       type: 'alert' as const,
     },
     {
       time: '14:23:02',
+<<<<<<< HEAD
+=======
+      agent: 'MEV Watcher',
+      message: 'No sandwich risk detected – this is an approval, not a swap.',
+      type: 'ok' as const,
+    },
+    {
+      time: '14:23:02',
+>>>>>>> 2876e3ac (frontend v5)
       agent: 'Liquidation',
-      message: '✅ No lending positions affected by this transaction.',
+      message: 'No lending positions affected by this transaction.',
       type: 'ok' as const,
     },
     {
       time: '14:23:03',
       agent: 'Coordinator',
+<<<<<<< HEAD
       message: '📊 Aggregating agent reports... Consensus: 2/3 agents flagged HIGH risk.',
+=======
+      message: 'Aggregating agent reports... Consensus: 2/4 agents flagged HIGH risk.',
+>>>>>>> 2876e3ac (frontend v5)
       type: 'info' as const,
     },
     {
       time: '14:23:03',
       agent: 'Coordinator',
-      message: '🛑 FINAL DECISION: BLOCK (risk score: 92). Threshold met.',
+      message: 'FINAL DECISION: BLOCK (risk score: 92). Threshold met.',
       type: 'decision' as const,
     },
     {
       time: '14:23:03',
       agent: 'Defender',
-      message: '🛡️ Transaction blocked. Recommending approval revocation for spender.',
+      message: 'Shield Transaction blocked. Recommending approval revocation for spender.',
       type: 'action' as const,
     },
   ];
@@ -58,13 +71,13 @@ export default function SwarmPage() {
     <div>
       <h2 className="mb-6 text-2xl font-bold text-white">Swarm Activity Feed</h2>
 
-      <div className="rounded-xl border border-gray-800 bg-safe-card p-6">
+      <div className="glass-panel rounded-xl p-6">
         <div className="mb-4 flex items-center gap-3">
           <span className="h-2 w-2 rounded-full bg-safe-green animate-pulse" />
           <span className="text-sm text-gray-400">SwarmGuard — 6 agents online</span>
         </div>
 
-        <div className="space-y-1 font-mono text-sm">
+        <div className="space-y-1 mono-tech text-sm">
           {feedItems.map((item, i) => {
             const color =
               item.type === 'alert'

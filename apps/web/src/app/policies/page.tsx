@@ -61,7 +61,7 @@ export default function PoliciesPage() {
 
 function PolicySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-safe-card p-6">
+    <div className="glass-panel rounded-xl p-6">
       <h3 className="mb-4 text-lg font-semibold text-white">{title}</h3>
       <div className="space-y-3">{children}</div>
     </div>

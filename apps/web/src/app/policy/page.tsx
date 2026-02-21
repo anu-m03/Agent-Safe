@@ -117,7 +117,7 @@ export default function PolicyPage() {
               value={simInput}
               onChange={(e) => setSimInput(e.target.value)}
               rows={12}
-              className="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-white font-mono"
+              className="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-white mono-tech"
             />
             <button
               onClick={runSimulation}
@@ -145,7 +145,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-safe-card p-5">
+    <div className="glass-panel rounded-xl p-5">
       <h3 className="mb-3 text-sm font-semibold text-gray-400 uppercase tracking-wider">
         {title}
       </h3>
@@ -167,7 +167,7 @@ function Row({
     <div className="flex items-center justify-between gap-4">
       <span className="text-sm text-gray-400">{label}</span>
       <span
-        className={`text-sm font-mono ${
+        className={`text-sm mono-tech ${
           highlight ? 'text-safe-green font-bold' : 'text-gray-300'
         }`}
       >

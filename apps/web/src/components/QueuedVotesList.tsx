@@ -7,8 +7,10 @@ import {
   executeVote as apiExecuteVote,
   type QueuedVoteResponse,
 } from '@/services/backendClient';
+import { useDemoMode } from '@/hooks/useDemoMode';
 
 export function QueuedVotesList() {
+  const { demoMode } = useDemoMode();
   const [votes, setVotes] = useState<QueuedVoteResponse[]>([]);
   const [vetoWindowSeconds, setVetoWindowSeconds] = useState(3600);
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,9 @@ export function QueuedVotesList() {
       <p className="mt-1 text-xs text-slate-400">
         Veto window: {Math.floor(vetoWindowSeconds / 60)}m. Execute only after window passes.
       </p>
+      {demoMode && (
+        <p className="mt-1 text-xs text-amber-300">Demo mode is read-only. Vote actions are disabled.</p>
+      )}
       <ul className="mt-3 space-y-2">
         {votes.map((v) => (
           <QueuedVoteRow
@@ -64,6 +69,7 @@ export function QueuedVotesList() {
             onVeto={() => handleVeto(v.voteId)}
             onExecute={() => handleExecute(v.voteId)}
             acting={acting === v.voteId}
+            demoMode={demoMode}
           />
         ))}
       </ul>
@@ -77,12 +83,14 @@ function QueuedVoteRow({
   onVeto,
   onExecute,
   acting,
+  demoMode,
 }: {
   vote: QueuedVoteResponse;
   vetoWindowSeconds: number;
   onVeto: () => void;
   onExecute: () => void;
   acting: boolean;
+  demoMode: boolean;
 }) {
   const [remaining, setRemaining] = useState<number | null>(null);
   const executeAfterMs = vote.executeAfter;
@@ -101,7 +109,7 @@ function QueuedVoteRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm">
       <div className="min-w-0">
-        <span className="font-mono text-xs text-slate-400">{vote.voteId.slice(0, 8)}…</span>
+        <span className="mono-tech text-xs text-slate-400">{vote.voteId.slice(0, 8)}…</span>
         <span className="ml-2 text-slate-300">{vote.proposalId.slice(0, 12)}…</span>
         <span className="ml-2 text-xs text-slate-500">
           {vote.support === 1 ? 'For' : vote.support === 0 ? 'Against' : 'Abstain'}
@@ -123,14 +131,14 @@ function QueuedVoteRow({
             )}
             <button
               onClick={onVeto}
-              disabled={acting}
+              disabled={acting || demoMode}
               className="rounded border border-red-400/40 bg-red-500/10 px-2 py-1 text-xs text-rose-300 hover:bg-red-500/20 disabled:opacity-50"
             >
               Veto
             </button>
             <button
               onClick={onExecute}
-              disabled={acting || remaining === null || remaining > 0}
+              disabled={demoMode || acting || remaining === null || remaining > 0}
               className="rounded border border-cyan-400/40 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {acting ? '…' : 'Execute'}

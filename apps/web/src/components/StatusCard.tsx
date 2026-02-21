@@ -50,7 +50,7 @@ export function StatusCard({ title, value, subtitle, color, delay = 0 }: StatusC
   return (
     <div
       className={`
-        group relative overflow-hidden rounded-xl border ${colors.border} bg-safe-card p-5
+        group relative overflow-hidden rounded-xl border ${colors.border} bg-panel-glass p-5
         transition-all duration-300
         hover:scale-105 hover:shadow-xl ${colors.glow}
         ${visible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}

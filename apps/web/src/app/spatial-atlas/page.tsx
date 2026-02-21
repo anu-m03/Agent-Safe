@@ -257,7 +257,7 @@ function SpaceCard({
     return (
       <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 animate-pulse">
         <p className="text-xs uppercase tracking-wide text-amber-300">Processing…</p>
-        <p className="mt-1 text-sm text-slate-300 font-mono">{space.proposalId.slice(0, 16)}…</p>
+        <p className="mt-1 text-sm text-slate-300 mono-tech">{space.proposalId.slice(0, 16)}…</p>
       </div>
     );
   }
@@ -266,7 +266,7 @@ function SpaceCard({
     return (
       <div className="rounded-2xl border border-red-400/20 bg-red-500/5 p-4">
         <p className="text-xs uppercase tracking-wide text-rose-300">Generation Failed</p>
-        <p className="mt-1 text-sm text-slate-300 font-mono">{space.proposalId.slice(0, 16)}…</p>
+        <p className="mt-1 text-sm text-slate-300 mono-tech">{space.proposalId.slice(0, 16)}…</p>
         {space.errorMessage && (
           <p className="mt-1 text-xs text-rose-400">{space.errorMessage}</p>
         )}
@@ -299,10 +299,10 @@ function SpaceCard({
       <div className="p-4 space-y-3">
         {/* Proposal ID + Scene Hash */}
         <div>
-          <p className="text-xs text-slate-400 font-mono truncate">
+          <p className="text-xs text-slate-400 mono-tech truncate">
             {space.proposalId.slice(0, 24)}…
           </p>
-          <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+          <p className="text-[10px] text-slate-500 mono-tech truncate mt-0.5">
             Scene Hash: {space.sceneHash.slice(0, 18)}…
           </p>
         </div>

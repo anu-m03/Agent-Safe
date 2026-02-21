@@ -25,6 +25,44 @@ export default function IntegrationsPage() {
   const [showRawStatus, setShowRawStatus] = useState(false);
   const nounsCount = proposals?.proposals.filter((p) => p.source === 'nouns').length ?? 0;
   const snapshotCount = proposals?.proposals.filter((p) => (p.source ?? 'snapshot') === 'snapshot').length ?? 0;
+  const healthAny = health as unknown as {
+    services?: {
+      quicknode?: { ok?: boolean; mode?: string; blockNumber?: number };
+      kite?: { ok?: boolean; mode?: string };
+    };
+    integrations?: {
+      quicknode?: { mode?: string };
+      kiteAi?: { mode?: string };
+    };
+  } | null;
+
+  const quicknodeMode = healthAny?.integrations?.quicknode?.mode ?? healthAny?.services?.quicknode?.mode;
+  const kiteMode = healthAny?.integrations?.kiteAi?.mode ?? healthAny?.services?.kite?.mode;
+  const quicknodeOk = Boolean(healthAny?.services?.quicknode?.ok);
+  const kiteOk = Boolean(healthAny?.services?.kite?.ok);
+
+  const allContractsConfigured = Object.values(CONTRACT_ADDRESSES).every(isNonZeroAddress);
+  const anyContractsConfigured = Object.values(CONTRACT_ADDRESSES).some(isNonZeroAddress);
+
+  const baseBadge: BadgeType =
+    BASE_MAINNET_CHAIN_ID === 8453 && allContractsConfigured
+      ? 'verified'
+      : BASE_MAINNET_CHAIN_ID === 8453 || anyContractsConfigured
+        ? 'stub'
+        : 'missing';
+
+  const quicknodeBadge: BadgeType =
+    quicknodeMode === 'live' ? 'verified' : typeof quicknodeMode === 'string' ? 'stub' : 'missing';
+
+  const kiteBadge: BadgeType =
+    kiteMode === 'live' ? 'verified' : typeof kiteMode === 'string' ? 'stub' : 'missing';
+
+  const snapshotBadge: BadgeType =
+    proposals?.proposals.length
+      ? 'verified'
+      : proposals
+        ? 'stub'
+        : 'missing';
 
   const load = useCallback(async () => {
     const [h, s, p] = await Promise.all([getHealth(), getStatus(), getProposals()]);
@@ -53,7 +91,7 @@ export default function IntegrationsPage() {
   return (
     <div>
       <h2 className="mb-2 text-2xl font-bold text-white">Integrations &amp; Sponsor Proof</h2>
-      <p className="mb-8 text-sm text-gray-500">
+      <p className="mb-8 text-sm text-slate-400">
         Verifiable proof of sponsor technology integration for AgentSafe + SwarmGuard.
       </p>
 
@@ -62,7 +100,7 @@ export default function IntegrationsPage() {
         <SponsorSection
           title="Base"
           subtitle="Primary L2 — Smart Contract Deployment"
-          badge={<Badge type="live" />}
+          badge={<Badge type={baseBadge} />}
         >
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Label>Chain ID</Label>
@@ -78,12 +116,12 @@ export default function IntegrationsPage() {
               {Object.entries(CONTRACT_ADDRESSES).map(([name, addr]) => (
                 <div key={name} className="flex items-center gap-2 text-xs">
                   <span className="text-gray-400 w-44 shrink-0">{name}</span>
-                  <code className="font-mono text-safe-blue">{addr}</code>
+                  <code className="mono-tech text-safe-blue">{addr}</code>
                 </div>
               ))}
             </div>
           </div>
-          <div className="mt-3 rounded bg-gray-900 p-3 text-xs text-gray-400">
+          <div className="bg-panel-glass mt-3 rounded p-3 text-xs text-slate-400">
             Execute on Base capability: Wallet not connected (MVP) — addresses visible above.
             <br />
             ERC-4337 account abstraction + SwarmGuard policy engine deployed.
@@ -94,28 +132,18 @@ export default function IntegrationsPage() {
         <SponsorSection
           title="QuickNode"
           subtitle="RPC Provider"
-          badge={
-            health?.services?.quicknode?.ok ? (
-              <Badge type="live" />
-            ) : health ? (
-              <Badge type="stub" />
-            ) : healthError ? (
-              <Badge type="missing" />
-            ) : (
-              <Badge type="loading" />
-            )
-          }
+          badge={<Badge type={quicknodeBadge} />}
         >
-          {health?.services?.quicknode ? (
+          {healthAny?.services?.quicknode ? (
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <Label>Status</Label>
-              <Value>{health.services.quicknode.ok ? '✅ Connected' : '❌ Not connected'}</Value>
+              <Value>{quicknodeOk ? 'Connected' : 'Not connected'}</Value>
               <Label>Mode</Label>
-              <Value>{health.services.quicknode.mode}</Value>
-              {health.services.quicknode.blockNumber && (
+              <Value>{quicknodeMode ?? '—'}</Value>
+              {healthAny.services.quicknode.blockNumber && (
                 <>
                   <Label>Block Number</Label>
-                  <Value>{health.services.quicknode.blockNumber.toLocaleString()}</Value>
+                  <Value>{healthAny.services.quicknode.blockNumber.toLocaleString()}</Value>
                 </>
               )}
             </div>
@@ -124,7 +152,7 @@ export default function IntegrationsPage() {
           ) : (
             <p className="text-xs text-gray-500">Loading…</p>
           )}
-          {health?.services?.quicknode?.mode === 'disabled' && (
+          {quicknodeMode === 'disabled' && (
             <p className="mt-2 text-xs text-safe-yellow">
               Set QUICKNODE_RPC_URL to enable live RPC proof.
             </p>
@@ -135,39 +163,27 @@ export default function IntegrationsPage() {
         <SponsorSection
           title="Kite AI"
           subtitle="AI Summarisation Pipeline"
-          badge={
-            health?.services?.kite ? (
-              health.services.kite.mode === 'live' ? (
-                <Badge type="live" />
-              ) : (
-                <Badge type="stub" />
-              )
-            ) : healthError ? (
-              <Badge type="missing" />
-            ) : (
-              <Badge type="loading" />
-            )
-          }
+          badge={<Badge type={kiteBadge} />}
         >
-          {health?.services?.kite && (
+          {healthAny?.services?.kite && (
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <Label>Mode</Label>
-              <Value>{health.services.kite.mode}</Value>
+              <Value>{kiteMode ?? '—'}</Value>
               <Label>Status</Label>
-              <Value>{health.services.kite.ok ? '✅ Available' : '❌ Unavailable'}</Value>
+              <Value>{kiteOk ? 'Available' : 'Unavailable'}</Value>
             </div>
           )}
           <div className="mt-3 flex items-center gap-3">
             <button
               onClick={testKite}
               disabled={kiteTestLoading || !(proposals?.proposals?.length)}
-              className="rounded-lg border border-blue-800 bg-safe-blue/20 px-4 py-2 text-sm font-semibold text-safe-blue hover:bg-safe-blue/30 disabled:opacity-50"
+              className="hover-smooth rounded-lg border border-blue-800 bg-safe-blue/20 px-4 py-2 text-sm font-semibold text-safe-blue hover:bg-safe-blue/30 disabled:opacity-50"
             >
               {kiteTestLoading ? 'Testing…' : 'Run Kite Summary Test'}
             </button>
             {kiteTestOk !== null && (
               <span className={`text-xs font-semibold ${kiteTestOk ? 'text-safe-green' : 'text-safe-red'}`}>
-                {kiteTestOk ? '✅ Kite pipeline functioning' : '❌ Pipeline failed'}
+                {kiteTestOk ? 'Kite pipeline functioning' : 'Pipeline failed'}
               </span>
             )}
           </div>
@@ -177,15 +193,7 @@ export default function IntegrationsPage() {
         <SponsorSection
           title="Nouns DAO + Snapshot"
           subtitle="Live Governance Proposal Ingestion"
-          badge={
-            proposals && proposals.proposals.length > 0 ? (
-              <Badge type="live" />
-            ) : proposals ? (
-              <Badge type="stub" />
-            ) : (
-              <Badge type="loading" />
-            )
-          }
+          badge={<Badge type={snapshotBadge} />}
         >
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <Label>Proposals Loaded</Label>
@@ -203,7 +211,7 @@ export default function IntegrationsPage() {
               {proposals.proposals.slice(0, 3).map((p) => (
                 <div
                   key={p.id}
-                  className="rounded bg-gray-900 px-3 py-2 text-xs text-gray-300"
+                  className="bg-panel-glass rounded px-3 py-2 text-xs text-gray-300"
                 >
                   <span className="font-semibold text-white">{p.title}</span>
                   <span className="ml-2 text-gray-500">[{p.space}]</span>
@@ -266,7 +274,7 @@ function SponsorSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-safe-card p-6">
+    <div className="glass-panel rounded-xl p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-white">{title}</h3>
@@ -279,12 +287,11 @@ function SponsorSection({
   );
 }
 
-function Badge({ type }: { type: 'live' | 'stub' | 'missing' | 'loading' }) {
+function Badge({ type }: { type: BadgeType }) {
   const map = {
-    live: { bg: 'bg-green-900/40 border-green-800 text-safe-green', label: '✅ Live' },
-    stub: { bg: 'bg-yellow-900/40 border-yellow-800 text-safe-yellow', label: '⚠️ Stub' },
-    missing: { bg: 'bg-red-900/40 border-red-800 text-safe-red', label: '❌ Missing' },
-    loading: { bg: 'bg-gray-800 border-gray-700 text-gray-400', label: '⏳ Loading' },
+    verified: { bg: 'bg-green-900/40 border-green-700 accent-green', label: 'Verified' },
+    stub: { bg: 'bg-yellow-900/40 border-yellow-700 accent-yellow', label: 'Stub' },
+    missing: { bg: 'bg-red-900/40 border-red-700 accent-red', label: 'Missing config' },
   };
   const { bg, label } = map[type];
   return (
@@ -294,12 +301,18 @@ function Badge({ type }: { type: 'live' | 'stub' | 'missing' | 'loading' }) {
   );
 }
 
+type BadgeType = 'verified' | 'stub' | 'missing';
+
+function isNonZeroAddress(address: string) {
+  return /^0x[0-9a-fA-F]{40}$/.test(address) && !/^0x0{40}$/.test(address);
+}
+
 function Label({ children }: { children: React.ReactNode }) {
   return <span className="text-gray-500">{children}</span>;
 }
 
 function Value({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-gray-300">{children}</span>;
+  return <span className="mono-tech text-gray-300">{children}</span>;
 }
 
 function CollapsibleJSON({
@@ -314,19 +327,130 @@ function CollapsibleJSON({
   data: unknown;
 }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-safe-card">
+    <div className="glass-panel rounded-lg">
       <button
         onClick={toggle}
-        className="flex w-full items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-white"
+        className="hover-smooth flex w-full items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-white"
       >
         <span>{label}</span>
         <span>{open ? '▼' : '▶'}</span>
       </button>
       {open && (
-        <pre className="max-h-64 overflow-auto border-t border-gray-800 p-4 text-xs text-gray-400">
-          {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
-        </pre>
+        <JSONViewer data={data} />
       )}
     </div>
   );
+}
+
+function JSONViewer({ data }: { data: unknown }) {
+  const [copied, setCopied] = useState(false);
+  const jsonString = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+
+  async function copyJson() {
+    try {
+      await navigator.clipboard.writeText(jsonString);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-gray-800 p-3">
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={copyJson}
+          className="hover-smooth rounded border border-gray-700 bg-black/30 px-2 py-1 text-[11px] font-medium text-gray-300 hover:border-gray-500"
+        >
+          {copied ? 'Copied' : 'Copy JSON'}
+        </button>
+      </div>
+      <div className="mono-tech max-h-72 overflow-auto rounded border border-gray-800 bg-black/25 p-3 text-xs">
+        <JSONTreeNode label={null} value={data} depth={0} defaultOpen />
+      </div>
+    </div>
+  );
+}
+
+function JSONTreeNode({
+  label,
+  value,
+  depth,
+  defaultOpen = false,
+}: {
+  label: string | number | null;
+  value: unknown;
+  depth: number;
+  defaultOpen?: boolean;
+}) {
+  const isObject = value !== null && typeof value === 'object';
+  const isArray = Array.isArray(value);
+  const entries = isObject
+    ? isArray
+      ? (value as unknown[]).map((v, i) => [i, v] as const)
+      : Object.entries(value as Record<string, unknown>)
+    : [];
+  const [open, setOpen] = useState(defaultOpen);
+
+  const indentStyle = { paddingLeft: `${depth * 14}px` };
+
+  if (!isObject) {
+    return (
+      <div style={indentStyle} className="leading-5">
+        {label !== null && <span className="text-sky-300">"{label}"</span>}
+        {label !== null && <span className="text-gray-500">: </span>}
+        <JSONValue value={value} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={indentStyle} className="flex items-center gap-1 leading-5">
+        <button
+          onClick={() => setOpen(!open)}
+          className="w-4 text-left text-gray-500 hover:text-gray-300"
+          aria-label={open ? 'Collapse node' : 'Expand node'}
+        >
+          {open ? '▼' : '▶'}
+        </button>
+        {label !== null && <span className="text-sky-300">"{label}"</span>}
+        {label !== null && <span className="text-gray-500">: </span>}
+        <span className="text-amber-300">{isArray ? '[' : '{'}</span>
+        {!open && (
+          <>
+            <span className="text-gray-500">
+              {entries.length > 0 ? '…' : ''}
+            </span>
+            <span className="text-amber-300">{isArray ? ']' : '}'}</span>
+          </>
+        )}
+      </div>
+      {open && (
+        <>
+          {entries.map(([k, v]) => (
+            <JSONTreeNode
+              key={`${String(label)}-${String(k)}`}
+              label={k}
+              value={v}
+              depth={depth + 1}
+            />
+          ))}
+          <div style={indentStyle} className="leading-5">
+            <span className="text-amber-300">{isArray ? ']' : '}'}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function JSONValue({ value }: { value: unknown }) {
+  if (value === null) return <span className="text-fuchsia-300">null</span>;
+  if (typeof value === 'string') return <span className="text-emerald-300">"{value}"</span>;
+  if (typeof value === 'number') return <span className="text-orange-300">{value}</span>;
+  if (typeof value === 'boolean') return <span className="text-violet-300">{String(value)}</span>;
+  if (typeof value === 'undefined') return <span className="text-gray-500">undefined</span>;
+  return <span className="text-slate-300">{String(value)}</span>;
 }

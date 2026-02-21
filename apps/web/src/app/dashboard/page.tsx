@@ -1,5 +1,6 @@
 'use client';
 
+<<<<<<< HEAD
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import {
@@ -14,11 +15,35 @@ import {
 } from '@/services/backendClient';
 import { StatusCard } from '@/components/StatusCard';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
+=======
+>>>>>>> 2876e3ac (frontend v5)
 import Link from 'next/link';
+import { BarChart2, Link2, Settings, Shield, Vote, Wallet, Zap } from 'lucide-react';
+
+const AGENTS = [
+  { key: 'mev', title: 'MEV Protection', status: 'Active', time: '2m ago', href: '/agent/mev' },
+  { key: 'gov', title: 'Governance Agent', status: 'Active', time: '6m ago', href: '/governance' },
+  { key: 'approval', title: 'Approval Guard', status: 'Monitoring', time: '1m ago', href: '/defense' },
+] as const;
+
+const FEED = [
+  { icon: Shield, text: 'Approval Guard flagged unlimited USDC allowance to unknown spender.', tx: '0x7aeC39fDd1c7a2E3d57e2F2015Fb9A4B4E83A711', time: '09:42' },
+  { icon: Zap, text: 'MEV Protection rerouted a 1.2 ETH swap through private relay path.', tx: '0x45dA9bb290E2efB5fc6aA4CB80FdE621A8A97Fa1', time: '09:37' },
+  { icon: Vote, text: 'Governance Agent queued recommendation for Snapshot proposal 0x2f4d.', tx: '0xAcD0A1CC3839A0d2d8c59A2aD3Bc1349245Aa9F1', time: '09:11' },
+  { icon: Link2, text: 'Execution receipt confirmed on Base for delegated rebalance call.', tx: '0x2F5f6081C81018690189c6B95E91A7A3E43f78A0', time: '08:58' },
+] as const;
+
+const STATS = [
+  { label: 'MEV Saved', value: '$18,402.17' },
+  { label: 'Txs Attributed', value: '1,942' },
+  { label: 'Revenue Earned', value: '47.82 ETH' },
+  { label: 'Compute Cost', value: '19.41 ETH' },
+] as const;
 
 const POLL_INTERVAL_MS = 10_000;
 
 export default function DashboardPage() {
+<<<<<<< HEAD
   const { address: walletAddress } = useAccount();
   const initDoneRef = useRef(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -291,126 +316,91 @@ export default function DashboardPage() {
             className="rounded-lg bg-gray-800 px-3 py-1 text-sm text-gray-400 transition-all hover:bg-gray-700 hover:text-white disabled:opacity-50"
           >
             {loading ? '⟳' : '↻'} Refresh
+=======
+  return (
+    <div className="page">
+      <header className="panel">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <p className="mono text-[14px] tracking-[0.08em]">AGENTSAFE</p>
+          <div className="flex items-center gap-3">
+            <div className="panel-tight flex items-center gap-2">
+              <Wallet className="h-[16px] w-[16px] text-[var(--color-accent)]" strokeWidth={1.5} />
+              <span className="mono text-[13px]">0x8A4f...93B1</span>
+            </div>
+            <div className="panel-tight mono text-[12px] tracking-[0.08em]">BASE 8453</div>
+          </div>
+          <button className="btn-ghost inline-flex items-center justify-center gap-2">
+            <Settings className="h-[16px] w-[16px]" strokeWidth={1.5} />
+            <span>Settings</span>
+>>>>>>> 2876e3ac (frontend v5)
           </button>
         </div>
-        <div className="space-y-3">
-          <StatusRow
-            label="QuickNode RPC"
-            value={health?.services?.quicknode?.mode ?? '—'}
-            ok={health?.services?.quicknode?.ok}
-          />
-          <StatusRow
-            label="Kite AI"
-            value={health?.services?.kite?.mode ?? '—'}
-            ok={health?.services?.kite?.ok}
-          />
-          <StatusRow
-            label="Snapshot Feed"
-            value={health?.services?.snapshot?.mode ?? '—'}
-            ok={health?.services?.snapshot?.ok}
-          />
-          <StatusRow
-            label="Swarm Runs"
-            value={status?.runsCount !== undefined ? String(status.runsCount) : '—'}
-            ok={true}
-          />
-          <StatusRow
-            label="Logs Stored"
-            value={status?.logsCount !== undefined ? String(status.logsCount) : '—'}
-            ok={true}
-          />
+      </header>
+
+      <section className="section-gap stagger grid gap-6 lg:grid-cols-3">
+        {AGENTS.map((agent) => (
+          <article key={agent.key} className="panel">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[28px] leading-tight">{agent.title}</h2>
+              <div className="status-dot active" />
+            </div>
+            <p className="mt-4 text-[14px] text-[var(--color-muted)]">{agent.status} · Last action {agent.time}</p>
+            <Link href={agent.href} className="btn-primary mt-6 inline-flex">Open Agent</Link>
+          </article>
+        ))}
+      </section>
+
+      <section className="section-gap panel">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-[28px]">Live Feed</h2>
+          <span className="mono text-[12px] tracking-[0.08em] text-[var(--color-muted)]">REAL TIME</span>
         </div>
-      </div>
-    </div>
-  );
-}
+        <div className="max-h-[320px] space-y-4 overflow-auto pr-1">
+          {FEED.map((item, idx) => {
+            const Icon = item.icon;
+            return (
+              <div key={idx} className="border-b border-[var(--color-border)] pb-4 last:border-b-0">
+                <div className="flex items-start gap-3">
+                  <Icon className="mt-0.5 h-[16px] w-[16px] text-[var(--color-accent)]" strokeWidth={1.5} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] leading-6">{item.text}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-[var(--color-muted)]">
+                      <a href={`https://basescan.org/tx/${item.tx}`} target="_blank" rel="noopener noreferrer" className="mono hover:underline">
+                        {item.tx.slice(0, 10)}...{item.tx.slice(-6)}
+                      </a>
+                      <span className="mono">{item.time}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-function QuickLink({
-  href,
-  title,
-  description,
-  icon,
-  delay = 0,
-}: {
-  href: string;
-  title: string;
-  description: string;
-  icon: string;
-  delay?: number;
-}) {
-  const [visible, setVisible] = useState(false);
+      <section className="section-gap grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        {STATS.map((stat) => (
+          <article key={stat.label} className="panel">
+            <p className="mono text-[36px] leading-none">{stat.value}</p>
+            <p className="mt-3 text-[12px] uppercase tracking-[0.08em] text-[var(--color-muted)]">{stat.label}</p>
+          </article>
+        ))}
+      </section>
 
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), delay);
-    return () => clearTimeout(timer);
-  }, [delay]);
-
-  return (
-    <Link
-      href={href}
-      className={`
-        group relative overflow-hidden rounded-xl border border-gray-800
-        bg-gradient-to-br from-safe-card to-gray-900/50 p-6
-        transition-all duration-300
-        hover:scale-105 hover:border-gray-600 hover:shadow-xl hover:shadow-blue-500/10
-        ${visible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}
-      `}
-      style={{ transitionDelay: `${delay}ms` }}
-    >
-      {/* Icon */}
-      <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 text-2xl shadow-lg transition-transform duration-300 group-hover:scale-110">
-        {icon}
-      </div>
-
-      {/* Content */}
-      <h3 className="mb-1 text-sm font-semibold text-white">{title}</h3>
-      <p className="text-xs text-gray-400">{description}</p>
-
-      {/* Arrow indicator */}
-      <div className="absolute right-4 top-4 text-gray-600 transition-all duration-300 group-hover:translate-x-1 group-hover:text-white">
-        →
-      </div>
-
-      {/* Hover gradient */}
-      <div className="absolute inset-0 bg-gradient-to-r from-green-500/0 via-blue-500/0 to-purple-500/0 opacity-0 transition-opacity duration-300 group-hover:from-green-500/5 group-hover:via-blue-500/5 group-hover:to-purple-500/5 group-hover:opacity-100" />
-    </Link>
-  );
-}
-
-function StatusRow({
-  label,
-  value,
-  ok,
-}: {
-  label: string;
-  value: string;
-  ok?: boolean;
-}) {
-  return (
-    <div className="group flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/50 px-4 py-3 transition-all duration-200 hover:border-gray-700 hover:bg-gray-900">
-      <span className="text-sm text-gray-400">{label}</span>
-      <div className="flex items-center gap-2">
-        <span
-          className={`flex h-2 w-2 rounded-full ${
-            ok === true
-              ? 'bg-safe-green shadow-lg shadow-green-500/50'
-              : ok === false
-                ? 'bg-safe-red shadow-lg shadow-red-500/50'
-                : 'bg-gray-600'
-          } ${ok === true ? 'animate-pulse' : ''}`}
-        />
-        <span
-          className={`font-mono text-sm ${
-            ok === true
-              ? 'text-safe-green'
-              : ok === false
-                ? 'text-safe-red'
-                : 'text-gray-500'
-          }`}
-        >
-          {value}
-        </span>
-      </div>
+      <section className="section-gap flex flex-wrap gap-4">
+        <Link href="/swap" className="btn-primary inline-flex items-center gap-2">
+          <Zap className="h-[16px] w-[16px]" strokeWidth={1.5} />
+          Propose Swap
+        </Link>
+        <Link href="/governance" className="btn-ghost inline-flex items-center gap-2">
+          <Vote className="h-[16px] w-[16px]" strokeWidth={1.5} />
+          Governance Review
+        </Link>
+        <Link href="/stats" className="btn-ghost inline-flex items-center gap-2">
+          <BarChart2 className="h-[16px] w-[16px]" strokeWidth={1.5} />
+          Public Stats
+        </Link>
+      </section>
     </div>
   );
 }

@@ -71,7 +71,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
                 Generating Space…
               </span>
             ) : (
-              '✦ Generate Proposal Space'
+              'Generate Proposal Space'
             )}
           </button>
           <span className="text-[10px] text-slate-500">Powered by Blockade Labs</span>
@@ -208,7 +208,7 @@ export function SpatialPanel({ proposalId }: SpatialPanelProps) {
           </div>
 
           {/* Scene hash */}
-          <p className="text-[10px] font-mono text-slate-500 truncate">
+          <p className="text-[10px] mono-tech text-slate-500 truncate">
             Scene Hash: {memory.sceneHash}
           </p>
 
