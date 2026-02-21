@@ -22,14 +22,6 @@ interface SwarmFeedProps {
 
 // ─── Helpers ─────────────────────────────────────────────
 
-<<<<<<< HEAD
-const AGENT_ICONS: Record<string, string> = {
-  SENTINEL: '🔍',
-  SCAM: '🚨',
-  LIQUIDATION: '💧',
-  COORDINATOR: '📊',
-  DEFENDER: '🛡️',
-=======
 const AGENT_ICONS: Record<string, LucideIcon> = {
   SENTINEL: Shield,
   SCAM: AlertTriangle,
@@ -37,7 +29,6 @@ const AGENT_ICONS: Record<string, LucideIcon> = {
   LIQUIDATION: Droplets,
   COORDINATOR: Network,
   DEFENDER: Bot,
->>>>>>> 2876e3ac (frontend v5)
 };
 
 const DISPLAY_ORDER = ['SENTINEL', 'SCAM', 'MEV', 'LIQUIDATION', 'COORDINATOR'] as const;

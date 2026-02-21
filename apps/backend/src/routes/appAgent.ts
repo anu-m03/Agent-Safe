@@ -43,7 +43,75 @@ import {
 
 export const appAgentRouter = Router();
 
-// ─── POST /api/app-agent/init ─────────────────────────────
+// ─── POST /api/app-agent/seed-test ───────────────────────
+// Creates a synthetic GeneratedApp from the provided (or default) idea params
+// and immediately fires Blockade Labs spatial generation — no wallet or budget
+// gate required. Designed for local dev / demo testing.
+appAgentRouter.post('/seed-test', async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const tags: string[] = Array.isArray(body.trendTags)
+      ? body.trendTags
+      : ['defi', 'swap', 'base-miniapp'];
+    const caps: string[] = Array.isArray(body.capabilities)
+      ? body.capabilities
+      : ['uniswap_swap', 'erc20_transfer'];
+    const title: string = typeof body.title === 'string'
+      ? body.title
+      : 'DeFi Yield Optimizer Mini-App';
+    const status: string = typeof body.status === 'string'
+      ? body.status
+      : 'SUPPORTED';
+
+    const appId = `seed-${Date.now()}`;
+    const ideaId = `idea-${appId}`;
+
+    // Build a GeneratedApp-shaped object
+    const app = {
+      id: appId,
+      ideaId,
+      templateId: 'base-miniapp-v1',
+      status,
+      metrics: {
+        users: body.users ?? 42,
+        revenueUsd: body.revenueUsd ?? 120,
+        impressions: body.impressions ?? 800,
+      },
+    } as unknown as import('../appAgent/types.js').GeneratedApp;
+
+    const idea: Record<string, unknown> = {
+      id: ideaId,
+      title,
+      trendTags: tags,
+      capabilities: caps,
+      userIntent: body.userIntent ?? 'test spatial generation',
+    };
+
+    // Save to app store so GET /apps includes it
+    saveApp(app);
+
+    // Fire spatial generation (async — client polls GET /:appId/space)
+    const evolutionCtx = getEvolutionContext(8).filter((e) => e.appId !== appId);
+    generateAppSpatialMemory(app, idea, evolutionCtx).catch((err) =>
+      console.error('[seed-test] spatial error:', err),
+    );
+
+    res.status(202).json({
+      ok: true,
+      appId,
+      title,
+      trendTags: tags,
+      capabilities: caps,
+      status,
+      message: 'Seeded — poll GET /api/app-agent/:appId/space or GET /api/app-agent/atlas for result',
+    });
+  } catch (err) {
+    console.error('[app-agent] seed-test:', err);
+    res.status(500).json({ error: 'Seed failed', detail: String(err) });
+  }
+});
+
+// ─── POST /api/app-agent/init ────────────────────────────
 appAgentRouter.post('/init', (req, res) => {
   try {
     const walletAddress = req.body?.walletAddress;

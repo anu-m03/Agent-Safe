@@ -1,0 +1,56 @@
+{
+  "appId": "seed-1771650446198",
+  "ideaId": "idea-seed-1771650446198",
+  "sceneId": 14998769,
+  "sceneHash": "0xb7b4c4566f0a76fe7b959f038dfd4a4cbe62c98b02bc7c4a149573486b5ca3d5",
+  "prompt": "Luminous digital incubation chamber above neon Base blockchain cityscape. Holographic display: mini-app \"NFT Social Drop\" assembled from glowing components. DeFi Yield Zone: golden liquidity streams, Uniswap swirl logos, APR gauges. Social Discovery Hub: Farcaster frames, user avatars orbiting a mini-app launchpad. Uniswap Router: blue hyperspace tunnels feeding into the central app core. ERC-20 manifolds: cascading coin flows between wallets in neon green streams. Chamber glows green and gold — thriving user-adopted application. Retrofuturi...",
+  "fileUrl": "https://images.blockadelabs.com/images/imagine/Advanced_no_style_equirectangular-jpg_Luminous_digital_incubation_chamber_6047145030_14998769.jpg?ver=1",
+  "thumbUrl": "https://images.blockadelabs.com/thumbs/imagine/thumb_Advanced_no_style_thumb_Luminous_digital_incubation_chamber_4961511302_14998769.jpg?ver=1",
+  "createdAt": "2026-02-21T05:07:26.199Z",
+  "trendTags": [
+    "defi",
+    "swap",
+    "base-miniapp"
+  ],
+  "title": "NFT Social Drop",
+  "status": "SUPPORTED",
+  "metrics": {
+    "users": 42,
+    "revenueUsd": 120,
+    "impressions": 800
+  },
+  "detectedZones": [
+    {
+      "zone": "Core Incubation Pod",
+      "meaning": "Central deployment and safety-pipeline validation for this app",
+      "domain": "Safety"
+    },
+    {
+      "zone": "DeFi Yield Zone",
+      "meaning": "Swap and liquidity mechanics",
+      "domain": "Yield"
+    },
+    {
+      "zone": "Social Discovery Hub",
+      "meaning": "User acquisition and frame engagement",
+      "domain": "Engagement"
+    }
+  ],
+  "agentMarkers": [
+    {
+      "agentName": "TrendScout",
+      "zone": "Core Incubation Pod",
+      "severity": "low",
+      "rationale": "Trend tags: defi, swap, base-miniapp"
+    },
+    {
+      "agentName": "BudgetWarden",
+      "zone": "Core Incubation Pod",
+      "severity": "low",
+      "rationale": "Budget gate passed"
+    }
+  ],
+  "spatialSummary": "The Core Incubation Pod anchors this \"NFT Social Drop\" deployment. DeFi Yield Zone and Social Discovery Hub extend outward from it. Lifecycle status: SUPPORTED.",
+  "evolutionNote": "This app signals the agent is honing in on a successful niche — trend alignment led to user traction.",
+  "status_spatial": "complete"
+}

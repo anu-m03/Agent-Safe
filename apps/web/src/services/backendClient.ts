@@ -79,13 +79,9 @@ export interface HealthResponse {
 }
 
 export interface StatusResponse {
-<<<<<<< HEAD
   alive?: boolean;
   uptime: number;
   systemPlanes?: string[];
-=======
-  agents: number | string[];
->>>>>>> 2876e3ac (frontend v5)
   logsCount: number;
   runsCount: number;
   /** @deprecated SwarmGuard removed; kept for backward compat */
@@ -101,9 +97,8 @@ export function getStatus() {
   return request<StatusResponse>('/status');
 }
 
-<<<<<<< HEAD
-// ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
-=======
+// ─── Analytics ───────────────────────────────────────────
+
 export interface AnalyticsSummaryResponse {
   gasSpentWei: string;
   x402SpendWei: string;
@@ -136,8 +131,7 @@ export function getPayments(limit = 100) {
   return request<PaymentsResponse>(`/api/payments?limit=${limit}`);
 }
 
-// ─── SwarmGuard ──────────────────────────────────────────
->>>>>>> 2876e3ac (frontend v5)
+// ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
 
 /** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
 export interface EvaluateTxResponse {
@@ -295,10 +289,7 @@ export function executeVote(voteId: string) {
     body: JSON.stringify({ voteId }),
   });
 }
-<<<<<<< HEAD
-=======
 
->>>>>>> 2876e3ac (frontend v5)
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {
@@ -493,6 +484,22 @@ export interface AppAtlasResponse {
   }>;
 }
 
+/** Seed a synthetic test app and fire spatial generation (dev/demo only). */
+export function seedTestApp(overrides?: {
+  title?: string;
+  trendTags?: string[];
+  capabilities?: string[];
+  status?: string;
+  users?: number;
+  revenueUsd?: number;
+  impressions?: number;
+}) {
+  return request<{ ok: boolean; appId: string; title: string; message: string }>(
+    '/api/app-agent/seed-test',
+    { method: 'POST', body: JSON.stringify(overrides ?? {}) },
+  );
+}
+
 /** Fetch the full App Evolution Atlas. */
 export function getAppEvolutionAtlas() {
   return request<AppAtlasResponse>('/api/app-agent/atlas');
@@ -504,7 +511,8 @@ export function triggerAppSpace(appId: string, regenerate = false) {
     `/api/app-agent/${encodeURIComponent(appId)}/space`,
     { method: 'POST', body: JSON.stringify({ regenerate }) },
   );
-=======
+}
+
 // ─── Streams (Liquidation signals) ───────────────────────
 
 export interface StreamEvent {
@@ -536,5 +544,4 @@ export function getStreamEvents(limit = 20) {
 
 export function getStreamAlerts(limit = 20) {
   return request<{ alerts: LiquidationAlert[] }>(`/api/streams/alerts?limit=${limit}`);
->>>>>>> 2876e3ac (frontend v5)
 }

@@ -44,9 +44,7 @@ export function IntentCard({ intent }: IntentCardProps) {
   const isExecutable =
     !demoMode &&
     (intent.action === 'REVOKE_APPROVAL' ||
-      intent.action === 'EXECUTE_TX' ||
-      intent.action === 'LIQUIDATION_REPAY' ||
-      intent.action === 'LIQUIDATION_ADD_COLLATERAL');
+      intent.action === 'EXECUTE_TX');
 
   async function handleExecute() {
     setExecuting(true);
@@ -59,17 +57,10 @@ export function IntentCard({ intent }: IntentCardProps) {
       setExecutionError(null);
     } else {
       setExecutionResult(null);
-<<<<<<< HEAD
-      if (res.ok && 'reason' in res.data) {
-        setExecutionError((res.data as ExecutionFailureResponse).reason);
-      } else {
-        setExecutionError(res.ok ? 'Execution failed' : res.error);
-=======
       if (res.ok && res.data && 'reason' in res.data) {
         setExecutionError((res.data as ExecutionFailureResponse).reason);
       } else {
         setExecutionError(!res.ok ? res.error : 'Execution failed');
->>>>>>> 2876e3ac (frontend v5)
       }
     }
   }

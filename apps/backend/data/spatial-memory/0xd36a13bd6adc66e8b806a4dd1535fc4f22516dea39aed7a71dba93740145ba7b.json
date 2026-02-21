@@ -1,0 +1,40 @@
+{
+  "proposalId": "0xd36a13bd6adc66e8b806a4dd1535fc4f22516dea39aed7a71dba93740145ba7b",
+  "sceneId": 14998683,
+  "sceneHash": "0x6ce2cb888e80541590ae87411467255563ee6bed866502f64ff5f1408c1e681c",
+  "prompt": "A futuristic DAO governance hall with glowing neon circuitry on dark walls. Central holographic display showing the proposal title. A Treasury Vault zone with golden luminous data streams showing fund flows and vault doors. Multiple AI agent sentinel figures in each zone glowing with alert colors. Proposal: \"Brooklyn Banks Skatepark Temp Check\" as holographic text center stage. Atmosphere: dramatic sci-fi, dark ambient, high detail, panoramic 360.",
+  "fileUrl": "https://images.blockadelabs.com/images/imagine/Advanced_no_style_equirectangular-jpg_A_futuristic_DAO_governance_7611702708_14998683.jpg?ver=1",
+  "thumbUrl": "https://images.blockadelabs.com/thumbs/imagine/thumb_Advanced_no_style_thumb_A_futuristic_DAO_governance_3358475418_14998683.jpg?ver=1",
+  "createdAt": "2026-02-21T03:38:48.281Z",
+  "visitedAt": "2026-02-21T03:41:03.949Z",
+  "agentMarkers": [
+    {
+      "agentName": "Sentinel",
+      "zone": "Governance Chamber",
+      "severity": "low",
+      "rationale": "Routine governance monitoring"
+    },
+    {
+      "agentName": "ScamDetector",
+      "zone": "Treasury Vault",
+      "severity": "med",
+      "rationale": "Treasury/fund keywords found — scanning for social engineering"
+    }
+  ],
+  "detectedZones": [
+    {
+      "zone": "Treasury Vault",
+      "meaning": "Proposal involves fund movements or treasury exposure",
+      "riskDomain": "Governance"
+    },
+    {
+      "zone": "Governance Chamber",
+      "meaning": "Default governance oversight zone",
+      "riskDomain": "Governance"
+    }
+  ],
+  "spatialSummary": "The spatial environment highlights 2 active zones: Treasury Vault, Governance Chamber. 2 agents are positioned across the space monitoring for risks. Treasury Vault shows elevated activity suggesting fund movement scrutiny. Overall spatial assessment: moderate concerns in select zones.",
+  "voteRecommendation": "ABSTAIN",
+  "confidence": 55,
+  "status": "complete"
+}

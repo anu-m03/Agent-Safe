@@ -1,0 +1,17 @@
+{
+  "proposalId": "0xebe4aec5b96dc5c008902da341bcd4936f5aa09baf73daaa545259183b203089",
+  "sceneId": 0,
+  "sceneHash": "",
+  "prompt": "",
+  "fileUrl": "",
+  "thumbUrl": "",
+  "createdAt": "2026-02-21T03:36:21.325Z",
+  "visitedAt": "2026-02-21T03:41:03.951Z",
+  "agentMarkers": [],
+  "detectedZones": [],
+  "spatialSummary": "",
+  "voteRecommendation": "ABSTAIN",
+  "confidence": 0,
+  "status": "error",
+  "errorMessage": "Blockade API HTTP 400: {\"success\":false,\"response\":\"Text Prompt value is too high, max value is 600 characters\"}"
+}

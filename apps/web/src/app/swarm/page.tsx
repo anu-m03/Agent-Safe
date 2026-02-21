@@ -30,15 +30,12 @@ export default function SwarmPage() {
     },
     {
       time: '14:23:02',
-<<<<<<< HEAD
-=======
       agent: 'MEV Watcher',
       message: 'No sandwich risk detected – this is an approval, not a swap.',
       type: 'ok' as const,
     },
     {
       time: '14:23:02',
->>>>>>> 2876e3ac (frontend v5)
       agent: 'Liquidation',
       message: 'No lending positions affected by this transaction.',
       type: 'ok' as const,
@@ -46,11 +43,7 @@ export default function SwarmPage() {
     {
       time: '14:23:03',
       agent: 'Coordinator',
-<<<<<<< HEAD
-      message: '📊 Aggregating agent reports... Consensus: 2/3 agents flagged HIGH risk.',
-=======
       message: 'Aggregating agent reports... Consensus: 2/4 agents flagged HIGH risk.',
->>>>>>> 2876e3ac (frontend v5)
       type: 'info' as const,
     },
     {

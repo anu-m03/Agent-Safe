@@ -155,19 +155,6 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
     setError(null);
     const res = await apiExecuteVote(queued.voteId);
     setExecuting(false);
-<<<<<<< HEAD
-    if (res.ok && res.data && !res.data.ok) {
-      setError(res.data.reason);
-      return;
-    }
-    if (res.ok && res.data && res.data.ok) {
-      const executed = res.data;
-      setQueued((q) =>
-        q ? { ...q, status: 'executed', receipt: executed.receipt, txHash: executed.txHash } : null,
-      );
-    } else {
-      setError(res.error ?? 'Execute failed');
-=======
     if (res.ok && res.data && res.data.ok === true) {
       await syncQueuedState();
     } else {
@@ -197,7 +184,6 @@ export function ProposalCard({ proposal }: ProposalCardProps) {
       setSignature(sig);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
->>>>>>> 2876e3ac (frontend v5)
     }
   }
 
@@ -520,30 +506,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-<<<<<<< HEAD
-function PolicyChecksDisplay({ checks }: { checks: Record<string, unknown> }) {
-  const entries = Object.keys(checks).map((key: string) => {
-    const val = checks[key] as { passed?: boolean; detail?: string } | undefined;
-    return { key, passed: val?.passed ?? false, detail: val?.detail ?? '' };
-  });
-
-  return (
-    <div>
-      <span className="text-xs font-semibold text-slate-400">Policy Checks:</span>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {entries.map((e: { key: string; passed: boolean; detail: string }) => (
-          <span
-            key={e.key}
-            className={`rounded px-2 py-0.5 text-xs ${
-              e.passed
-                ? 'bg-emerald-400/15 text-emerald-300'
-                : 'bg-rose-500/15 text-rose-300'
-            }`}
-            title={e.detail}
-          >
-            {e.passed ? '✓' : '✗'} {e.key}
-          </span>
-=======
 function deriveRiskLevel(intent: VoteIntent | null): 'low' | 'medium' | 'high' | 'critical' | 'pending' {
   if (!intent) return 'pending';
   const keys = ['TREASURY_RISK', 'GOV_POWER_SHIFT', 'URGENCY_FLAG'] as const;
@@ -604,7 +566,6 @@ function LifecycleTimeline({
             </span>
             {idx < steps.length - 1 && <span className="text-slate-500">→</span>}
           </div>
->>>>>>> 2876e3ac (frontend v5)
         ))}
       </div>
     </div>

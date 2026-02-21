@@ -1,0 +1,28 @@
+{
+  "appId": "seed-1771649849009",
+  "ideaId": "idea-seed-1771649849009",
+  "sceneId": 0,
+  "sceneHash": "",
+  "prompt": "",
+  "fileUrl": "",
+  "thumbUrl": "",
+  "createdAt": "2026-02-21T04:57:29.010Z",
+  "trendTags": [
+    "defi",
+    "swap",
+    "base-miniapp"
+  ],
+  "title": "NFT Social Drop",
+  "status": "SUPPORTED",
+  "metrics": {
+    "users": 42,
+    "revenueUsd": 120,
+    "impressions": 800
+  },
+  "detectedZones": [],
+  "agentMarkers": [],
+  "spatialSummary": "",
+  "evolutionNote": "",
+  "status_spatial": "error",
+  "errorMessage": "Blockade API HTTP 400: {\"success\":false,\"response\":\"Text Prompt value is too high, max value is 600 characters\"}"
+}
