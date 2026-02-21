@@ -14,6 +14,9 @@ export const ActionTypeSchema = z.enum([
   'LIQUIDATION_REPAY',
   'LIQUIDATION_ADD_COLLATERAL',
   'NO_ACTION',
+  // Autonomous swap execution — allowlist-only, router-restricted.
+  // See ActionType in types/intents.ts for full safety constraints.
+  'SWAP_REBALANCE',
 ]);
 
 export const InputTxSchema = z.object({
