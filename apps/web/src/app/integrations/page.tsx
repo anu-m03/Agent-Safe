@@ -6,11 +6,13 @@ import {
   getStatus,
   getProposals,
   getAnalyticsSummary,
+  getAutonomyStatus,
   recommendVote,
   type HealthResponse,
   type StatusResponse,
   type ProposalsResponse,
   type AnalyticsSummaryResponse,
+  type AutonomyStatusResponse,
 } from '@/services/backendClient';
 import { CONTRACT_ADDRESSES, BASE_MAINNET_CHAIN_ID } from '@agent-safe/shared';
 
@@ -134,6 +136,7 @@ export default function IntegrationsPage() {
   const [x402Probe, setX402Probe] = useState<X402ProbeState | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [publicOrigin, setPublicOrigin] = useState('');
+  const [autonomy, setAutonomy] = useState<AutonomyStatusResponse | null>(null);
   const [kiteTestOk, setKiteTestOk] = useState<boolean | null>(null);
   const [kiteTestLoading, setKiteTestLoading] = useState(false);
   const [showRawHealth, setShowRawHealth] = useState(false);
@@ -143,12 +146,13 @@ export default function IntegrationsPage() {
   const snapshotCount = proposals?.proposals.filter((p) => (p.source ?? 'snapshot') === 'snapshot').length ?? 0;
 
   const load = useCallback(async () => {
-    const [h, s, p, a, x402] = await Promise.all([
+    const [h, s, p, a, x402, auto] = await Promise.all([
       getHealth(),
       getStatus(),
       getProposals(),
       getAnalyticsSummary(),
       probeX402Marketplace(),
+      getAutonomyStatus(),
     ]);
     if (h.ok) { setHealth(h.data); setHealthError(null); }
     else { setHealthError(h.error); }
@@ -157,6 +161,7 @@ export default function IntegrationsPage() {
     if (a.ok) { setAnalytics(a.data); setAnalyticsError(null); }
     else { setAnalyticsError(a.error); }
     setX402Probe(x402);
+    if (auto.ok) setAutonomy(auto.data);
     setLastUpdated(new Date().toISOString());
   }, []);
 
@@ -174,6 +179,83 @@ export default function IntegrationsPage() {
   const autonomySourceLabel: SourceLabel =
     analytics ? (hasAutonomyActivity ? 'live' : 'configured') : (analyticsError ? 'missing' : 'loading');
   const builderLabel: SourceLabel = (analytics?.actionsTotal ?? 0) > 0 ? 'live' : 'configured';
+
+  // ── 5-row Base track compliance evidence ──
+  const baseTxOk =
+    (analytics?.actionsTotal ?? 0) > 0 && deployment?.chainId === BASE_MAINNET_CHAIN_ID;
+  const x402FlowOk = x402Probe?.status === 'live';
+  const x402FlowPartial = x402Probe?.status === 'stub';
+  const autonomyCyclesOk =
+    (analytics?.cycles24h ?? 0) > 0 || (autonomy?.cycleCount ?? 0) > 0;
+  const autonomyCyclesPartial = autonomy?.enabled === true && !autonomyCyclesOk;
+  const ledgerOk = analytics !== null && analytics._source === 'logs';
+
+  type ComplianceStatus = 'pass' | 'warn' | 'fail' | 'loading';
+  interface ComplianceRowData {
+    label: string;
+    status: ComplianceStatus;
+    evidence: string;
+    endpoint: string;
+  }
+  const complianceEvidence: ComplianceRowData[] = [
+    {
+      label: 'Base mainnet tx evidence',
+      status: baseTxOk
+        ? 'pass'
+        : !analytics
+          ? 'loading'
+          : deployment?.chainId === BASE_MAINNET_CHAIN_ID
+            ? 'warn'
+            : 'fail',
+      evidence: analytics
+        ? baseTxOk
+          ? `${analytics.actionsTotal} UserOp${analytics.actionsTotal === 1 ? '' : 's'} submitted · chain ${deployment?.chainId}`
+          : `0 executions yet · chain ${deployment?.chainId ?? '?'} · BUNDLER_RPC_URL required`
+        : 'Awaiting backend',
+      endpoint: 'GET /api/swarm/logs → EXECUTION_SUCCESS events · /stats for Basescan links',
+    },
+    {
+      label: 'ERC-8021 attribution',
+      status: (analytics?.actionsTotal ?? 0) > 0 ? 'pass' : 'warn',
+      evidence: `"${DEFAULT_BUILDER_CODE}" → 0x${builderHex} · appended to every UserOp calldata`,
+      endpoint: 'BASE_BUILDER_CODE env · apps/backend/src/services/execution/callDataBuilder.ts',
+    },
+    {
+      label: 'x402 paid flow',
+      status: x402FlowOk ? 'pass' : x402FlowPartial ? 'warn' : !x402Probe ? 'loading' : 'fail',
+      evidence: x402Probe
+        ? `HTTP ${x402Probe.httpStatus ?? '?'} · ${x402Probe.detail.slice(0, 72)}`
+        : 'Loading…',
+      endpoint: 'POST /api/marketplace/request-protection',
+    },
+    {
+      label: 'Autonomy cycles',
+      status: autonomyCyclesOk
+        ? 'pass'
+        : autonomyCyclesPartial
+          ? 'warn'
+          : !analytics && !autonomy
+            ? 'loading'
+            : 'warn',
+      evidence: autonomy
+        ? `${autonomy.cycleCount} total · ${analytics?.cycles24h ?? 0} in 24h · ${autonomy.enabled ? 'RUNNING' : 'OFF'}`
+        : analytics
+          ? `${analytics.cycles24h} cycles (24h)`
+          : 'Loading…',
+      endpoint: 'GET /api/analytics/autonomy · GET /api/analytics/summary',
+    },
+    {
+      label: 'Profitability ledger',
+      status: ledgerOk ? 'pass' : !analytics ? 'loading' : 'warn',
+      evidence: analytics
+        ? `${analytics.runwayIndicator} · ${analytics.actionsTotal} actions · source: ${analytics._source}`
+        : analyticsError
+          ? `Unavailable: ${analyticsError.slice(0, 60)}`
+          : 'Loading…',
+      endpoint: 'GET /api/analytics/summary (_source: "logs")',
+    },
+  ];
+  const compliancePassed = complianceEvidence.filter((r) => r.status === 'pass').length;
 
   const readinessChecks = [
     { label: 'Base mainnet chain id (8453)', ok: deployment?.chainId === BASE_MAINNET_CHAIN_ID, source: 'live: /health.deployment.chainId' },
@@ -227,6 +309,28 @@ export default function IntegrationsPage() {
             <span className="text-gray-500">
               Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}
             </span>
+          </div>
+
+          {/* ── 5-row evidence checklist ── */}
+          <div className="mb-4 overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
+            <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-semibold text-white">
+                  Base Track — Compliance Evidence
+                </h4>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  Five required criteria · endpoint per row · all live-verifiable
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-gray-400">
+                {compliancePassed}/{complianceEvidence.length} passed
+              </span>
+            </div>
+            <div className="divide-y divide-gray-800/50">
+              {complianceEvidence.map((row) => (
+                <ComplianceRow key={row.label} {...row} />
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -629,6 +733,41 @@ function SourceTag({ label, compact = false }: { label: SourceLabel; compact?: b
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide ${classes}`}>
       {text}
     </span>
+  );
+}
+
+function ComplianceRow({
+  label,
+  status,
+  evidence,
+  endpoint,
+}: {
+  label: string;
+  status: 'pass' | 'warn' | 'fail' | 'loading';
+  evidence: string;
+  endpoint: string;
+}) {
+  const icon =
+    status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : status === 'loading' ? '⏳' : '❌';
+  const labelColor =
+    status === 'pass'
+      ? 'text-white'
+      : status === 'warn'
+        ? 'text-safe-yellow'
+        : status === 'loading'
+          ? 'text-gray-400'
+          : 'text-safe-red';
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      <span className="mt-0.5 shrink-0 text-sm leading-none">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className={`text-xs font-semibold ${labelColor}`}>{label}</span>
+          <span className="text-xs text-gray-400">{evidence}</span>
+        </div>
+        <code className="mt-0.5 block text-[10px] text-gray-600">{endpoint}</code>
+      </div>
+    </div>
   );
 }
 

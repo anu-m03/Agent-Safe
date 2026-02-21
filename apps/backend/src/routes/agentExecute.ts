@@ -45,6 +45,7 @@ import { getDeployment, isTargetAllowed } from '../config/deployment.js';
 import type { ActionIntent } from '@agent-safe/shared';
 import { base } from 'viem/chains';
 import { Buffer } from 'buffer';
+import { appendLog, createLogEvent } from '../storage/logStore.js';
 
 export const agentExecuteRouter = Router();
 
@@ -115,6 +116,11 @@ const ExecuteSchema = z.object({
   mode: z.enum(['rebalance', 'demo']).default('demo'),
   tokenIn: z.string().default('USDC'),
   tokenOut: z.string().default('WETH'),
+  metadata: z
+    .object({
+      cycleId: z.string().min(1).max(128).optional(),
+    })
+    .optional(),
 });
 
 // ─── Token helpers ───────────────────────────────────────
@@ -180,7 +186,8 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
     });
   }
 
-  const { swapper, smartAccount, tokenIn, tokenOut } = parsed.data;
+  const { swapper, smartAccount, tokenIn, tokenOut, metadata } = parsed.data;
+  const cycleId = metadata?.cycleId;
 
   // ── 1. Load session ────────────────────────────────────
   const session = getSession(swapper);
@@ -651,20 +658,50 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       userOpHash: submittedHash,
       txHash,
       gasCostWei,
+      cycleId: cycleId ?? null,
       source: metaSource,
     })}`,
+  );
+
+  // TODO: Replace with realized onchain PnL/yield hook once available from execution receipts.
+  const realizedYieldWei = '0';
+
+  appendLog(
+    createLogEvent(
+      'EXECUTION_SUCCESS',
+      {
+        executed: true,
+        gasCostWei,
+        userOpHash: submittedHash,
+        txHash,
+        routeType,
+        realizedYieldWei,
+        cycleId: cycleId ?? null,
+      },
+      'INFO',
+      cycleId,
+    ),
   );
 
   return res.json({
     ok: true,
     executed: true,
+    cycleId: cycleId ?? null,
     userOpHash: submittedHash,
     txHash,
     gasCostWei,
+    realizedYieldWei,
     routeType,
     decision,
     quote,
-    meta: { source: metaSource, routeType, gasCostWei, userOpHash: submittedHash, txHash },
+    meta: {
+      source: metaSource,
+      routeType,
+      gasCostWei,
+      userOpHash: submittedHash,
+      txHash,
+      cycleId: cycleId ?? null,
+    },
     session: sessionSummary(session),
   });
 });

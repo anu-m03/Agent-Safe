@@ -1,5 +1,7 @@
 import { getSession, sessionSummary } from '../../state/sessionStore.js';
 import { buildPerformanceFeeAccounting } from './performanceFee.js';
+import { appendLog, createLogEvent } from '../../storage/logStore.js';
+import type { LogEventType } from '@agent-safe/shared';
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const MIN_INTERVAL_MS = 1_000;
@@ -67,8 +69,39 @@ function loadAutonomyContext(): { ok: true; context: AutonomyContext } | { ok: f
   };
 }
 
+const PERSISTED_AUTONOMY_TYPES: ReadonlySet<LogEventType> = new Set([
+  'AUTONOMY_ENABLED',
+  'AUTONOMY_DISABLED',
+  'AUTONOMY_CYCLE_START',
+  'AUTONOMY_CYCLE_RESULT',
+  'AUTONOMY_CYCLE_END',
+  'AUTONOMY_STOPPED',
+]);
+
+function isPersistedAutonomyType(v: unknown): v is LogEventType {
+  return typeof v === 'string' && PERSISTED_AUTONOMY_TYPES.has(v as LogEventType);
+}
+
+function shouldConsoleLog(): boolean {
+  return process.env.AUTONOMY_CONSOLE_LOGS !== 'false';
+}
+
 function logEvent(event: Record<string, unknown>): void {
-  console.log(`[autonomyLoop] ${JSON.stringify(event)}`);
+  if (shouldConsoleLog()) {
+    console.log(`[autonomyLoop] ${JSON.stringify(event)}`);
+  }
+
+  if (!isPersistedAutonomyType(event.type)) return;
+
+  const runId = typeof event.cycleId === 'string' ? event.cycleId : undefined;
+  const level =
+    event.type === 'AUTONOMY_CYCLE_RESULT' &&
+    typeof event.reason === 'string' &&
+    event.reason.startsWith('LOOP_ERROR:')
+      ? 'ERROR'
+      : 'INFO';
+
+  appendLog(createLogEvent(event.type, event, level, runId));
 }
 
 function nowIso(): string {
@@ -122,8 +155,12 @@ export function startAutonomyLoop(options: StartAutonomyLoopOptions): AutonomyLo
           ts: nowIso(),
           type: 'AUTONOMY_CYCLE_RESULT',
           cycleId,
+          httpStatus: null,
           executed: false,
-          reason: loaded.reason,
+          reason: loaded.reason ?? null,
+          gasCostWei: null,
+          txHash: null,
+          userOpHash: null,
         });
         return;
       }
@@ -135,8 +172,12 @@ export function startAutonomyLoop(options: StartAutonomyLoopOptions): AutonomyLo
           ts: nowIso(),
           type: 'AUTONOMY_CYCLE_RESULT',
           cycleId,
+          httpStatus: null,
           executed: false,
           reason: 'NO_ACTIVE_SESSION',
+          gasCostWei: null,
+          txHash: null,
+          userOpHash: null,
           context,
         });
         return;
@@ -189,8 +230,12 @@ export function startAutonomyLoop(options: StartAutonomyLoopOptions): AutonomyLo
         ts: nowIso(),
         type: 'AUTONOMY_CYCLE_RESULT',
         cycleId,
+        httpStatus: null,
         executed: false,
         reason: `LOOP_ERROR: ${message}`,
+        gasCostWei: null,
+        txHash: null,
+        userOpHash: null,
       });
     } finally {
       inFlight = false;

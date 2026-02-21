@@ -10,6 +10,8 @@ contract PolicyEngineTest is Test {
     address owner = address(0xA);
     address target = address(0xC);
     address govModule = address(0xD);
+    address uniswapRouter = address(0x1111);
+    address aerodromeRouter = address(0x2222);
 
     function setUp() public {
         engine = new PolicyEngine(owner);
@@ -265,6 +267,84 @@ contract PolicyEngineTest is Test {
 
         (bool allowed2, bytes32 reason) = engine.validateCall(address(0), target, 6 ether, "", false);
         assertFalse(allowed2);
+        assertEq(reason, "EXCEEDS_MAX_VALUE");
+    }
+
+    // ─── Exchange Route Helpers ──────────────────────────
+
+    function test_ExchangeRoutePolicy_UniswapAllowsOnlyKnownSelectors() public {
+        bytes32 routeKey = engine.ROUTE_UNISWAP_UNIVERSAL_ROUTER();
+        vm.prank(owner);
+        engine.setExchangeRoutePolicy(uniswapRouter, routeKey, true);
+
+        bytes memory allowedData = abi.encodeWithSelector(engine.UNI_EXECUTE_SELECTOR());
+        (bool allowed, ) = engine.checkCall(address(0), uniswapRouter, 0, allowedData, false);
+        assertTrue(allowed);
+
+        // Unknown selector on same route target must still be blocked.
+        bytes memory arbitraryData =
+            abi.encodeWithSelector(bytes4(keccak256("rugPull(address,uint256)")), address(0x1), 1);
+        (bool allowed2, bytes32 reason2) = engine.checkCall(address(0), uniswapRouter, 0, arbitraryData, false);
+        assertFalse(allowed2);
+        assertEq(reason2, "SELECTOR_NOT_ALLOWED");
+    }
+
+    function test_ExchangeRoutePolicy_AerodromeAllowsConfiguredSelectors() public {
+        bytes32 routeKey = engine.ROUTE_AERODROME_ROUTER();
+        vm.prank(owner);
+        engine.setExchangeRoutePolicy(aerodromeRouter, routeKey, true);
+
+        bytes memory allowedData =
+            abi.encodeWithSelector(engine.AERO_SWAP_EXACT_TOKENS_FOR_TOKENS_SELECTOR());
+        (bool allowed, ) = engine.checkCall(address(0), aerodromeRouter, 0, allowedData, false);
+        assertTrue(allowed);
+    }
+
+    function test_ExchangeRoutePolicy_UnknownRouteReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PolicyEngine.InvalidExchangeRoute.selector,
+                keccak256("UNKNOWN_ROUTE")
+            )
+        );
+        engine.setExchangeRoutePolicy(uniswapRouter, keccak256("UNKNOWN_ROUTE"), true);
+    }
+
+    function test_ExchangeRoutePolicy_DenyByDefaultStillAppliesToOtherTargets() public {
+        bytes32 routeKey = engine.ROUTE_UNISWAP_UNIVERSAL_ROUTER();
+        vm.prank(owner);
+        engine.setExchangeRoutePolicy(uniswapRouter, routeKey, true);
+
+        address arbitraryTarget = address(0xBEEF);
+        bytes memory data = abi.encodeWithSelector(engine.UNI_EXECUTE_SELECTOR());
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), arbitraryTarget, 0, data, false);
+        assertFalse(allowed);
+        assertEq(reason, "NOT_ALLOWLISTED");
+    }
+
+    function test_ExchangeRoutePolicy_DenylistStillWins() public {
+        bytes32 routeKey = engine.ROUTE_UNISWAP_UNIVERSAL_ROUTER();
+        vm.startPrank(owner);
+        engine.setExchangeRoutePolicy(uniswapRouter, routeKey, true);
+        engine.setDenylistedTarget(uniswapRouter, true);
+        vm.stopPrank();
+
+        bytes memory data = abi.encodeWithSelector(engine.UNI_EXECUTE_WITH_DEADLINE_SELECTOR());
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), uniswapRouter, 0, data, false);
+        assertFalse(allowed);
+        assertEq(reason, "DENYLISTED_TARGET");
+    }
+
+    function test_ExchangeRoutePolicy_ExistingCapsInvariant() public {
+        bytes32 routeKey = engine.ROUTE_UNISWAP_UNIVERSAL_ROUTER();
+        vm.prank(owner);
+        engine.setExchangeRoutePolicy(uniswapRouter, routeKey, true);
+
+        // Existing cap invariant must still apply even for explicitly allowed route selectors.
+        bytes memory data = abi.encodeWithSelector(engine.UNI_EXECUTE_SELECTOR());
+        (bool allowed, bytes32 reason) = engine.checkCall(address(0), uniswapRouter, 2 ether, data, false);
+        assertFalse(allowed);
         assertEq(reason, "EXCEEDS_MAX_VALUE");
     }
 }

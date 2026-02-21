@@ -14,6 +14,26 @@ import { appendLog, createLogEvent } from '../../storage/logStore.js';
 
 // ─── Minimal heuristics (fallback only) ───────────────────
 
+function maybeLogSyntheticX402Payment(
+  actionType: PaidActionType,
+  payment: { paymentTxHash: string; amountWei: string },
+): void {
+  // Real x402 path already logs X402_PAYMENT in requireX402Payment().
+  // Keep synthetic logging only for zero-amount stub path.
+  if (payment.amountWei !== '0') return;
+  appendLog(
+    createLogEvent(
+      'X402_PAYMENT',
+      {
+        actionType,
+        paymentTxHash: payment.paymentTxHash,
+        amountWei: payment.amountWei,
+      },
+      'INFO',
+    ),
+  );
+}
+
 function fallbackSummarise(text: string): string {
   const preview = text.slice(0, 150).replace(/\n/g, ' ').trim();
   return `[Fallback] Summary: ${preview}${text.length > 150 ? '...' : ''}`;
@@ -46,13 +66,7 @@ export async function runProposalSummarise(text: string): Promise<PaymentRecord>
 
   if (payment.ok) {
     const result = await summarise(text);
-    appendLog(
-      createLogEvent('X402_PAYMENT', {
-        actionType: 'PROPOSAL_SUMMARISE',
-        paymentTxHash: payment.paymentTxHash,
-        amountWei: '0',
-      }, 'INFO'),
-    );
+    maybeLogSyntheticX402Payment('PROPOSAL_SUMMARISE', payment);
     return appendPaymentRecord({
       actionType: 'PROPOSAL_SUMMARISE',
       paymentTxHash: payment.paymentTxHash,
@@ -87,13 +101,7 @@ export async function runRiskClassification(payload: Record<string, unknown>): P
 
   if (payment.ok) {
     const result = await classifyRisk(payload);
-    appendLog(
-      createLogEvent('X402_PAYMENT', {
-        actionType: 'RISK_CLASSIFICATION',
-        paymentTxHash: payment.paymentTxHash,
-        amountWei: '0',
-      }, 'INFO'),
-    );
+    maybeLogSyntheticX402Payment('RISK_CLASSIFICATION', payment);
     return appendPaymentRecord({
       actionType: 'RISK_CLASSIFICATION',
       paymentTxHash: payment.paymentTxHash,
@@ -128,13 +136,7 @@ export async function runTxSimulation(to: string, value: string, data: string): 
 
   if (payment.ok) {
     const result = await simulateTransaction(to, value, data);
-    appendLog(
-      createLogEvent('X402_PAYMENT', {
-        actionType: 'TX_SIMULATION',
-        paymentTxHash: payment.paymentTxHash,
-        amountWei: '0',
-      }, 'INFO'),
-    );
+    maybeLogSyntheticX402Payment('TX_SIMULATION', payment);
     return appendPaymentRecord({
       actionType: 'TX_SIMULATION',
       paymentTxHash: payment.paymentTxHash,

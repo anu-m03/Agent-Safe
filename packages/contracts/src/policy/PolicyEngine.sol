@@ -34,6 +34,30 @@ contract PolicyEngine {
     /// @notice Seconds per bucket (1 hour)
     uint256 private constant BUCKET_DURATION = 3600;
 
+    // ─── Exchange Route Constants ─────────────────────────
+    // Explicit selector sets used by helper-based exchange policy configuration.
+    // Deny-by-default still applies unless owner explicitly enables a route target.
+
+    /// @notice Route key for Uniswap Universal Router on Base.
+    bytes32 public constant ROUTE_UNISWAP_UNIVERSAL_ROUTER = keccak256("UNISWAP_UNIVERSAL_ROUTER");
+    /// @notice Route key for Aerodrome Router on Base.
+    bytes32 public constant ROUTE_AERODROME_ROUTER = keccak256("AERODROME_ROUTER");
+
+    /// @notice Uniswap Universal Router execute(bytes,bytes[],uint256)
+    bytes4 public constant UNI_EXECUTE_WITH_DEADLINE_SELECTOR = 0x3593564c;
+    /// @notice Uniswap Universal Router execute(bytes,bytes[])
+    bytes4 public constant UNI_EXECUTE_SELECTOR = 0x24856bc3;
+
+    /// @notice Aerodrome swapExactTokensForTokens(uint256,uint256,address[],address,uint256)
+    bytes4 public constant AERO_SWAP_EXACT_TOKENS_FOR_TOKENS_SELECTOR =
+        bytes4(keccak256("swapExactTokensForTokens(uint256,uint256,address[],address,uint256)"));
+    /// @notice Aerodrome swapExactETHForTokens(uint256,address[],address,uint256)
+    bytes4 public constant AERO_SWAP_EXACT_ETH_FOR_TOKENS_SELECTOR =
+        bytes4(keccak256("swapExactETHForTokens(uint256,address[],address,uint256)"));
+    /// @notice Aerodrome swapExactTokensForETH(uint256,uint256,address[],address,uint256)
+    bytes4 public constant AERO_SWAP_EXACT_TOKENS_FOR_ETH_SELECTOR =
+        bytes4(keccak256("swapExactTokensForETH(uint256,uint256,address[],address,uint256)"));
+
     // ─── State ───────────────────────────────────────────
 
     address public owner;
@@ -95,6 +119,7 @@ contract PolicyEngine {
     error GovernanceModeValueForbidden();
     error GovernanceModeSelectorRestricted(bytes4 selector);
     error GovernanceModeApproveForbidden();
+    error InvalidExchangeRoute(bytes32 routeKey);
 
     // ─── Events ──────────────────────────────────────────
 
@@ -109,6 +134,7 @@ contract PolicyEngine {
     event ApprovalCapPerTokenSpenderUpdated(address indexed token, address indexed spender, uint256 cap);
     event GovernanceModuleUpdated(address oldModule, address newModule);
     event GovernorAllowedUpdated(address indexed governor, bool allowed);
+    event ExchangeRoutePolicyUpdated(bytes32 indexed routeKey, address indexed target, bool allowed);
 
     // ─── Modifiers ───────────────────────────────────────
 
@@ -154,6 +180,33 @@ contract PolicyEngine {
         emit SelectorAllowedUpdated(target, selector, allowed);
     }
 
+    /**
+     * @notice Helper to configure explicit exchange route target+selectors.
+     * @dev Keeps deny-by-default semantics: only selected target + known selectors become allowed.
+     *      Unknown route keys are rejected to avoid accidental broad selector grants.
+     */
+    function setExchangeRoutePolicy(address target, bytes32 routeKey, bool allowed) external onlyOwner {
+        targetAllowed[target] = allowed;
+        emit TargetAllowedUpdated(target, allowed);
+
+        if (routeKey == ROUTE_UNISWAP_UNIVERSAL_ROUTER) {
+            _setSelector(target, UNI_EXECUTE_WITH_DEADLINE_SELECTOR, allowed);
+            _setSelector(target, UNI_EXECUTE_SELECTOR, allowed);
+            emit ExchangeRoutePolicyUpdated(routeKey, target, allowed);
+            return;
+        }
+
+        if (routeKey == ROUTE_AERODROME_ROUTER) {
+            _setSelector(target, AERO_SWAP_EXACT_TOKENS_FOR_TOKENS_SELECTOR, allowed);
+            _setSelector(target, AERO_SWAP_EXACT_ETH_FOR_TOKENS_SELECTOR, allowed);
+            _setSelector(target, AERO_SWAP_EXACT_TOKENS_FOR_ETH_SELECTOR, allowed);
+            emit ExchangeRoutePolicyUpdated(routeKey, target, allowed);
+            return;
+        }
+
+        revert InvalidExchangeRoute(routeKey);
+    }
+
     function setMaxValuePerTx(uint256 maxValue) external onlyOwner {
         uint256 old = maxValuePerTx;
         maxValuePerTx = maxValue;
@@ -195,6 +248,11 @@ contract PolicyEngine {
     function setGovernorAllowed(address governor, bool allowed) external onlyOwner {
         allowedGovernors[governor] = allowed;
         emit GovernorAllowedUpdated(governor, allowed);
+    }
+
+    function _setSelector(address target, bytes4 selector, bool allowed) internal {
+        selectorAllowed[target][selector] = allowed;
+        emit SelectorAllowedUpdated(target, selector, allowed);
     }
 
     // ─── Rolling 24h Spend Tracking ─────────────────────

@@ -6,9 +6,11 @@ import {
   getStatus,
   getProposals,
   getAnalyticsSummary,
+  getAutonomyStatus,
   type HealthResponse,
   type StatusResponse,
   type AnalyticsSummaryResponse,
+  type AutonomyStatusResponse,
 } from '@/services/backendClient';
 import { StatusCard } from '@/components/StatusCard';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
@@ -19,6 +21,7 @@ export default function DashboardPage() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [proposalCount, setProposalCount] = useState<number | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsSummaryResponse | null>(null);
+  const [autonomy, setAutonomy] = useState<AutonomyStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedBuilderCode, setCopiedBuilderCode] = useState(false);
@@ -30,16 +33,18 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [h, s, p, a] = await Promise.all([
+    const [h, s, p, a, au] = await Promise.all([
       getHealth(),
       getStatus(),
       getProposals(),
       getAnalyticsSummary(),
+      getAutonomyStatus(),
     ]);
     if (h.ok) setHealth(h.data); else setError(h.error);
     if (s.ok) setStatus(s.data);
     if (p.ok) setProposalCount(p.data.proposals.length);
     if (a.ok) setAnalytics(a.data);
+    if (au.ok) setAutonomy(au.data);
     setLoading(false);
   }, []);
 
@@ -90,6 +95,24 @@ export default function DashboardPage() {
   const swarmOk = health?.status === 'ok';
   const agentCount = status?.agents ?? 0;
 
+  // Non-interactive mainnet readiness warnings
+  const warnings: string[] = [];
+  if (!loading && health) {
+    const dep = health.deployment;
+    const cfg = dep?.configured;
+    const feat = health.features;
+    if (dep?.chainId !== undefined && dep.chainId !== 8453)
+      warnings.push(`Chain ${dep.chainId} detected — Base mainnet (8453) required for on-chain execution.`);
+    if (cfg?.bundlerUrl === false)
+      warnings.push('Bundler not configured — autonomous swaps will not submit UserOps.');
+    if (cfg?.agentSafeAccount === false)
+      warnings.push('Smart account not configured — execution target is missing.');
+    if (feat?.swapRebalance === false)
+      warnings.push('Swap rebalance disabled — autonomy loop will skip all swap actions.');
+    if (autonomy?.enabled === true && autonomy.sessionActive === false)
+      warnings.push('Autonomy loop is running but no active session key — swaps will be skipped.');
+  }
+
   return (
     <div className="space-y-8">
       {/* Hero Header */}
@@ -130,6 +153,23 @@ export default function DashboardPage() {
               Retry
             </button>
           </div>
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-800/60 bg-amber-900/10 p-4">
+          <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-300">
+            <span>⚠</span>
+            Mainnet Readiness — {warnings.length} issue{warnings.length > 1 ? 's' : ''} detected
+          </p>
+          <ul className="space-y-1">
+            {warnings.map((w) => (
+              <li key={w} className="text-xs text-amber-200/80">• {w}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] uppercase tracking-wide text-amber-400/60">
+            Read-only diagnostic — resolve in backend configuration
+          </p>
         </div>
       )}
 
@@ -181,7 +221,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Autonomy Status Widget */}
-      <AutonomyWidget analytics={analytics} loading={loading} />
+      <AutonomyWidget analytics={analytics} autonomy={autonomy} loading={loading} />
 
       {/* Quick Actions */}
       <div>
@@ -386,14 +426,24 @@ function QuickLink({
   );
 }
 
+function timeAgo(iso: string): string {
+  const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  return `${Math.floor(diffMin / 60)}h ago`;
+}
+
 function AutonomyWidget({
   analytics,
+  autonomy,
   loading,
 }: {
   analytics: AnalyticsSummaryResponse | null;
+  autonomy: AutonomyStatusResponse | null;
   loading: boolean;
 }) {
-  if (loading && !analytics) {
+  if (loading && !analytics && !autonomy) {
     return (
       <div className="rounded-xl border border-gray-800 bg-safe-card p-5">
         <div className="skeleton mb-3 h-4 w-40" />
@@ -407,36 +457,59 @@ function AutonomyWidget({
     );
   }
 
-  const enabled = analytics !== null;
+  type LoopState = 'RUNNING' | 'WAITING' | 'OFF' | 'CONNECTED' | 'OFFLINE';
+  let loopState: LoopState;
+  if (autonomy?.enabled && autonomy.sessionActive) loopState = 'RUNNING';
+  else if (autonomy?.enabled && !autonomy.sessionActive) loopState = 'WAITING';
+  else if (autonomy && !autonomy.enabled) loopState = 'OFF';
+  else if (analytics) loopState = 'CONNECTED';
+  else loopState = 'OFFLINE';
+
+  const badgeCls: Record<LoopState, string> = {
+    RUNNING:   'border-emerald-400/30 bg-emerald-500/10 text-emerald-300',
+    WAITING:   'border-amber-400/30 bg-amber-500/10 text-amber-300',
+    OFF:       'border-gray-700 bg-gray-800 text-gray-500',
+    CONNECTED: 'border-indigo-400/30 bg-indigo-500/10 text-indigo-300',
+    OFFLINE:   'border-gray-700 bg-gray-800 text-gray-500',
+  };
+  const dotCls: Record<LoopState, string> = {
+    RUNNING:   'animate-pulse bg-safe-green shadow-lg shadow-green-500/50',
+    WAITING:   'animate-pulse bg-amber-400 shadow-lg shadow-amber-500/50',
+    OFF:       'bg-gray-600',
+    CONNECTED: 'animate-pulse bg-indigo-400 shadow-lg shadow-indigo-500/50',
+    OFFLINE:   'bg-gray-600',
+  };
+  const borderAccent: Record<LoopState, string> = {
+    RUNNING:   'border-emerald-900/40',
+    WAITING:   'border-amber-900/40',
+    OFF:       'border-gray-800',
+    CONNECTED: 'border-indigo-900/40',
+    OFFLINE:   'border-gray-800',
+  };
+
   const runwayColor =
     analytics?.runwayIndicator === 'PROFITABLE'
       ? 'text-safe-green'
       : analytics?.runwayIndicator === 'LOSS'
         ? 'text-safe-red'
         : 'text-safe-yellow';
-  const borderAccent = enabled ? 'border-indigo-900/40' : 'border-gray-800';
 
   return (
-    <div className={`rounded-xl border ${borderAccent} bg-safe-card p-5`}>
+    <div className={`rounded-xl border ${borderAccent[loopState]} bg-safe-card p-5`}>
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-white">Autonomy Loop</h3>
           <span
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-              enabled
-                ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-gray-700 bg-gray-800 text-gray-500'
-            }`}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badgeCls[loopState]}`}
           >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                enabled
-                  ? 'animate-pulse bg-safe-green shadow-lg shadow-green-500/50'
-                  : 'bg-gray-600'
-              }`}
-            />
-            {enabled ? 'CONNECTED' : 'OFFLINE'}
+            <span className={`h-1.5 w-1.5 rounded-full ${dotCls[loopState]}`} />
+            {loopState}
           </span>
+          {autonomy?.lastCycleAt && (
+            <span className="text-[10px] text-gray-500">
+              Last: {timeAgo(autonomy.lastCycleAt)}
+            </span>
+          )}
         </div>
         <Link
           href="/stats"
@@ -445,6 +518,34 @@ function AutonomyWidget({
           Full Stats →
         </Link>
       </div>
+
+      {autonomy && (
+        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+          <span>
+            Cycles total:{' '}
+            <span className="font-semibold text-white">{autonomy.cycleCount}</span>
+          </span>
+          <span>
+            Session:{' '}
+            <span
+              className={
+                autonomy.sessionActive
+                  ? 'font-semibold text-emerald-300'
+                  : 'font-semibold text-amber-300'
+              }
+            >
+              {autonomy.sessionActive
+                ? `Active${autonomy.sessionExpiresIn !== null ? ` · ${Math.floor(autonomy.sessionExpiresIn / 60)}m left` : ''}`
+                : 'None'}
+            </span>
+          </span>
+          {autonomy.swapper && (
+            <span className="font-mono">
+              {autonomy.swapper.slice(0, 6)}…{autonomy.swapper.slice(-4)}
+            </span>
+          )}
+        </div>
+      )}
 
       {analytics ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

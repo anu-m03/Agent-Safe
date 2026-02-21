@@ -66,6 +66,47 @@ async function request<T>(
   }
 }
 
+/**
+ * Like request<T> but reads the JSON body even on non-2xx responses.
+ * Used for endpoints that return structured data on 402 (x402 payment gate).
+ * Same AbortController/timeout behaviour as request<T>.
+ */
+type RawResult<T> =
+  | { httpStatus: number; body: T | null }
+  | { networkError: string };
+
+async function requestRaw<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<RawResult<T>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+    let body: T | null = null;
+    try {
+      body = (await res.json()) as T;
+    } catch {
+      /* unparseable body — treat as null */
+    }
+    return { httpStatus: res.status, body };
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { networkError: 'Request timed out (10s)' };
+    }
+    return { networkError: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Health / Status ─────────────────────────────────────
 
 export interface HealthDeploymentConfigured {
@@ -336,6 +377,234 @@ export interface AutonomyStatusResponse {
 
 export function getAutonomyStatus() {
   return request<AutonomyStatusResponse>('/api/analytics/autonomy');
+}
+
+// ─── Marketplace (x402 paid actions) ─────────────────────
+
+export type PaidActionType =
+  | 'PROPOSAL_SUMMARISE'
+  | 'RISK_CLASSIFICATION'
+  | 'TX_SIMULATION'
+  | 'REQUEST_PROTECTION';
+
+/**
+ * Structured result of probing the x402 payment gate.
+ * httpStatus 402 = payment required; 200 = gate passed (with valid txHash).
+ * Returned as ok:true regardless of HTTP status so callers see the gate detail.
+ */
+export interface X402GateResponse {
+  /** Raw HTTP status returned by the gate (402 or 200) */
+  httpStatus: number;
+  paymentRequired: boolean;
+  operatorWallet: string | null;
+  requiredAmountWei: string | null;
+  actionType: string | null;
+  chainId?: number;
+  /** Human-readable detail from the response body */
+  detail: string;
+}
+
+/**
+ * Probe the x402 payment gate without supplying a paymentTxHash.
+ * Always returns ok:true with the gate state, or ok:false on network failure.
+ * Use this for compliance probing — not for submitting real paid requests.
+ */
+export async function probeMarketplace(
+  actionType: PaidActionType = 'REQUEST_PROTECTION',
+): Promise<ApiResult<X402GateResponse>> {
+  type RawBody = {
+    paymentRequired?: boolean;
+    operatorWallet?: string | null;
+    requiredAmountWei?: string | null;
+    actionType?: string;
+    chainId?: number;
+    reason?: string;
+  };
+  const raw = await requestRaw<RawBody>('/api/marketplace/request-protection', {
+    method: 'POST',
+    body: JSON.stringify({ actionType }),
+  });
+  if ('networkError' in raw) return { ok: false, error: raw.networkError };
+  const { httpStatus, body } = raw;
+  return {
+    ok: true,
+    data: {
+      httpStatus,
+      paymentRequired: body?.paymentRequired === true || httpStatus === 402,
+      operatorWallet: body?.operatorWallet ?? null,
+      requiredAmountWei: body?.requiredAmountWei ?? null,
+      actionType: body?.actionType ?? actionType,
+      chainId: body?.chainId,
+      detail: body?.reason ?? (httpStatus === 402 ? 'Payment required' : `HTTP ${httpStatus}`),
+    },
+  };
+}
+
+export interface YieldMetrics {
+  aprBps?: number;
+  utilizationBps?: number;
+  drawdownBps?: number;
+  concentrationBps?: number;
+  volatilityBps?: number;
+}
+
+export interface YieldHealthSignal {
+  riskBand: 'LOW' | 'MEDIUM' | 'HIGH';
+  rebalanceSuggestion: { action: string; guidance: string };
+  freshnessTimestamp: string;
+  confidence: number;
+  observations: {
+    aprBps: number;
+    utilizationBps: number;
+    drawdownBps: number;
+    concentrationBps: number;
+    volatilityBps: number;
+    riskScore: number;
+  };
+}
+
+export interface YieldHealthSignalsResponse {
+  ok: true;
+  signal: YieldHealthSignal;
+  metadata: {
+    action: string;
+    billedActionType: string;
+    paymentTxHash: string;
+    amountWei: string;
+    chainId: number;
+  };
+}
+
+/**
+ * POST /api/marketplace/yield-health-signals
+ * Requires a valid paymentTxHash verifying an on-chain x402 payment.
+ * Returns { ok: false, error } on 402 (no/invalid payment).
+ */
+export function getYieldHealthSignals(paymentTxHash: string, metrics?: YieldMetrics) {
+  return request<YieldHealthSignalsResponse>('/api/marketplace/yield-health-signals', {
+    method: 'POST',
+    body: JSON.stringify({ paymentTxHash, metrics }),
+  });
+}
+
+// ─── Payments Ledger ──────────────────────────────────────
+
+export interface PaymentRecord {
+  id: string;
+  actionType: PaidActionType;
+  /** null when fallback path used (insufficient funds) */
+  paymentTxHash: string | null;
+  result: unknown;
+  timestamp: number;
+  fallbackUsed: boolean;
+}
+
+export interface PaymentsResponse {
+  ok: true;
+  payments: PaymentRecord[];
+}
+
+/** GET /api/payments — list stored x402 payment records (proof of paid actions) */
+export function getPayments(limit?: number) {
+  const qs = limit ? `?limit=${limit}` : '';
+  return request<PaymentsResponse>(`/api/payments${qs}`);
+}
+
+// ─── Session Keys ─────────────────────────────────────────
+
+export interface SessionLimitsSummary {
+  seedAmountInBaseUnits: string;
+  maxAmountIn: string;
+  maxTradeCapPerCycleBaseUnits: string;
+  maxSlippageBps: number;
+  maxPriceImpactBps: number;
+}
+
+/** Public-safe session summary returned by all session endpoints (no private key). */
+export interface SessionSummary {
+  swapper: string;
+  smartAccount: string;
+  sessionKey: string;
+  validUntil: number;
+  expiresIn: number;
+  active: boolean;
+  limits: SessionLimitsSummary;
+  createdAt: string;
+}
+
+export interface SessionUnsignedTx {
+  to: string;
+  data: string;
+  value: string;
+  chainId: number;
+}
+
+export interface SessionStartResponse {
+  ok: true;
+  session: SessionSummary;
+  capModel: {
+    seedAmountInBaseUnits: string;
+    maxTradeCapPerCycleBaseUnits: string;
+    capFormula: string;
+    inputSource: string;
+    legacyField: string;
+  };
+  /** Unsigned tx the user must sign once to activate the session key onchain */
+  txToSign: SessionUnsignedTx;
+  instructions: string;
+}
+
+export interface SessionStopResponse {
+  ok: true;
+  revoked: true;
+  /** Unsigned tx the user must sign to revoke the session key onchain */
+  txToSign: SessionUnsignedTx;
+  instructions: string;
+}
+
+export interface SessionStatusResponse {
+  ok: true;
+  session: SessionSummary | null;
+  active: boolean;
+  /** Present when active:false, explains why (absent or expired) */
+  reason?: string;
+}
+
+/** GET /api/agents/session/status?swapper=0x... */
+export function getSessionStatus(swapper: string) {
+  return request<SessionStatusResponse>(
+    `/api/agents/session/status?swapper=${encodeURIComponent(swapper)}`,
+  );
+}
+
+/**
+ * POST /api/agents/session/start
+ * Returns txToSign — user must sign it once to install the session key onchain.
+ * Requires SESSION_KEYS_ENABLED=true on the backend.
+ */
+export function startSession(params: {
+  swapper: string;
+  smartAccount: string;
+  validForSeconds?: number;
+  seedAmountInBaseUnits?: string;
+  maxSlippageBps?: number;
+  maxPriceImpactBps?: number;
+}) {
+  return request<SessionStartResponse>('/api/agents/session/start', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+/**
+ * POST /api/agents/session/stop
+ * Clears the in-memory session and returns txToSign to revoke the key onchain.
+ */
+export function stopSession(params: { swapper: string; smartAccount: string }) {
+  return request<SessionStopResponse>('/api/agents/session/stop', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 }
 
 // ─── Spatial (Blockade Labs) ─────────────────────────────
