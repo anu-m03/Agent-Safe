@@ -22,7 +22,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { encodeFunctionData, createPublicClient, http } from 'viem';
-import { baseSepolia } from 'viem/chains';
+import { base, baseSepolia } from 'viem/chains';
 import {
   createSession,
   getSession,
@@ -31,13 +31,19 @@ import {
   sessionSummary,
 } from '../state/sessionStore.js';
 import { AgentSafeAccountAbi } from '../abi/AgentSafeAccount.js';
+import { getDeployment } from '../config/deployment.js';
 
 export const sessionRouter = Router();
+const BASE_SEPOLIA_CHAIN_ID = 84532;
 
 // ─── Feature Gate ────────────────────────────────────────
 
 function isEnabled(): boolean {
   return process.env.SESSION_KEYS_ENABLED === 'true';
+}
+
+function isTestnetMode(): boolean {
+  return process.env.AGENT_TESTNET_MODE === 'true';
 }
 
 // ─── Validation Schemas ──────────────────────────────────
@@ -90,8 +96,14 @@ sessionRouter.post('/start', async (req, res) => {
   // Optionally read the current swarmSigner so we can restore it on stop
   let previousSwarmSigner: string | null = null;
   try {
-    const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL ?? process.env.BASE_RPC_URL ?? 'https://sepolia.base.org';
-    const client = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
+    const testnet = isTestnetMode();
+    const rpcUrl = testnet
+      ? (process.env.BASE_SEPOLIA_RPC_URL ?? process.env.BASE_RPC_URL ?? 'https://sepolia.base.org')
+      : getDeployment().rpcUrl;
+    const client = createPublicClient({
+      chain: testnet ? baseSepolia : base,
+      transport: http(rpcUrl),
+    });
     previousSwarmSigner = (await client.readContract({
       address: smartAccount as `0x${string}`,
       abi: AgentSafeAccountAbi,
@@ -121,7 +133,7 @@ sessionRouter.post('/start', async (req, res) => {
       args: [session.sessionKey as `0x${string}`],
     }),
     value: '0x0',
-    chainId: 84532, // Base Sepolia
+    chainId: isTestnetMode() ? BASE_SEPOLIA_CHAIN_ID : getDeployment().chainId,
   };
 
   return res.json({
@@ -169,7 +181,7 @@ sessionRouter.post('/stop', (req, res) => {
       args: [restoreTo as `0x${string}`],
     }),
     value: '0x0',
-    chainId: 84532,
+    chainId: isTestnetMode() ? BASE_SEPOLIA_CHAIN_ID : getDeployment().chainId,
   };
 
   return res.json({
