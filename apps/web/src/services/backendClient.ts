@@ -97,6 +97,8 @@ export function getStatus() {
   return request<StatusResponse>('/status');
 }
 
+// ─── Analytics ───────────────────────────────────────────
+
 // ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
 export interface AnalyticsSummaryResponse {
   gasSpentWei: string;
@@ -130,6 +132,7 @@ export function getPayments(limit = 100) {
   return request<PaymentsResponse>(`/api/payments?limit=${limit}`);
 }
 
+// ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
 // ─── SwarmGuard ──────────────────────────────────────────
 
 /** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
@@ -481,6 +484,22 @@ export interface AppAtlasResponse {
     sceneHash: string;
     createdAt: string;
   }>;
+}
+
+/** Seed a synthetic test app and fire spatial generation (dev/demo only). */
+export function seedTestApp(overrides?: {
+  title?: string;
+  trendTags?: string[];
+  capabilities?: string[];
+  status?: string;
+  users?: number;
+  revenueUsd?: number;
+  impressions?: number;
+}) {
+  return request<{ ok: boolean; appId: string; title: string; message: string }>(
+    '/api/app-agent/seed-test',
+    { method: 'POST', body: JSON.stringify(overrides ?? {}) },
+  );
 }
 
 /** Fetch the full App Evolution Atlas. */

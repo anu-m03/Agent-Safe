@@ -179,6 +179,7 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       budgetRemaining: getBudgetRemaining(),
       pipelineLogs,
       baseNative,
+      evolutionContext,
     };
   }
 

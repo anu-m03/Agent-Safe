@@ -1,0 +1,28 @@
+{
+  "appId": "seed-1771650099189",
+  "ideaId": "idea-seed-1771650099189",
+  "sceneId": 0,
+  "sceneHash": "",
+  "prompt": "",
+  "fileUrl": "",
+  "thumbUrl": "",
+  "createdAt": "2026-02-21T05:01:39.190Z",
+  "trendTags": [
+    "defi",
+    "swap",
+    "base-miniapp"
+  ],
+  "title": "DeFi Yield Optimizer Mini-App",
+  "status": "SUPPORTED",
+  "metrics": {
+    "users": 42,
+    "revenueUsd": 120,
+    "impressions": 800
+  },
+  "detectedZones": [],
+  "agentMarkers": [],
+  "spatialSummary": "",
+  "evolutionNote": "",
+  "status_spatial": "error",
+  "errorMessage": "Blockade API HTTP 400: {\"success\":false,\"response\":\"Text Prompt value is too high, max value is 600 characters\"}"
+}

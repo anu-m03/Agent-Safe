@@ -1,0 +1,40 @@
+{
+  "proposalId": "0x5c7c03798e65bade255452d83aa277486f9bb47de37e9fc14310d2478b31fdaf",
+  "sceneId": 14998684,
+  "sceneHash": "0x2ad06d5ec8812c3306a4f2cba54c705d4270f9f38afc7340b11034bfadced64e",
+  "prompt": "A futuristic DAO governance hall with glowing neon circuitry on dark walls. Central holographic display showing the proposal title. A Governance Chamber with ambient blue holographic voting interface. A Treasury Vault in the distance with sealed vault doors and status indicators. Multiple AI agent sentinel figures in each zone glowing with alert colors. Proposal: \"Will sentiment polls improve discussions about NounsDAO prop\" as holographic text center stage. Atmosphere: dramatic sci-fi, dark ambient, high detail, panoramic 360.",
+  "fileUrl": "https://images.blockadelabs.com/images/imagine/Advanced_no_style_equirectangular-jpg_A_futuristic_DAO_governance_2353644740_14998684.jpg?ver=1",
+  "thumbUrl": "https://images.blockadelabs.com/thumbs/imagine/thumb_Advanced_no_style_thumb_A_futuristic_DAO_governance_3656229718_14998684.jpg?ver=1",
+  "createdAt": "2026-02-21T03:40:07.624Z",
+  "visitedAt": "2026-02-21T03:41:03.945Z",
+  "agentMarkers": [
+    {
+      "agentName": "Sentinel",
+      "zone": "Governance Chamber",
+      "severity": "low",
+      "rationale": "Routine governance monitoring"
+    },
+    {
+      "agentName": "ScamDetector",
+      "zone": "Treasury Vault",
+      "severity": "low",
+      "rationale": "No immediate treasury risk signals"
+    }
+  ],
+  "detectedZones": [
+    {
+      "zone": "Governance Chamber",
+      "meaning": "Proposal addresses governance structure or voting parameters",
+      "riskDomain": "Governance"
+    },
+    {
+      "zone": "Governance Chamber",
+      "meaning": "Default governance oversight zone",
+      "riskDomain": "Governance"
+    }
+  ],
+  "spatialSummary": "The spatial environment highlights 2 active zones: Governance Chamber, Governance Chamber. 2 agents are positioned across the space monitoring for risks. Overall spatial assessment: no critical spatial risk signals detected.",
+  "voteRecommendation": "FOR",
+  "confidence": 65,
+  "status": "complete"
+}

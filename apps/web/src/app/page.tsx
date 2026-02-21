@@ -1,5 +1,9 @@
 'use client';
 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getSpatialAtlas, getAppEvolutionAtlas, seedTestApp } from '@/services/backendClient';
+import type { AppSpatialMemory, AppSpatialMarker, AppSpatialZone } from '@/services/backendClient';
+import type { SpatialMemory, AgentMarker, DetectedZone } from '@agent-safe/shared';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -68,6 +72,18 @@ const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 const SCRAMBLE_CHARS = '0123456789ABCDEF@#$%';
 
 type Theme = 'dark' | 'light';
+type View = 'landing' | 'dashboard' | 'approval' | 'governance' | 'liquidation' | 'stats' | 'spatial';
+
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  opacity: number;
+  cluster: 0 | 1 | 2;
+  phase: number;
+};
 type Tab = 'agent' | 'stats' | 'settings';
 type Verdict = 'DEPLOYED' | 'BLOCKED' | 'REJECTED' | null;
 type ToastTone = 'accent' | 'pass' | 'block' | 'warning';
@@ -158,6 +174,81 @@ type CycleEntry = {
   description?: string;
 };
 
+const HEX_CHARS = '0123456789ABCDEF';
+const walletAddress = '0x742d35Cc6634C0532925a3b8D4C9C8f3a1bE4c2';
+
+const navItems = [
+  { key: 'dashboard', label: 'Overview', icon: Bot },
+  { key: 'approval', label: 'Approval Guard', icon: ShieldAlert },
+  { key: 'governance', label: 'Governance Safe', icon: Vote },
+  { key: 'liquidation', label: 'Liquidation', icon: Activity },
+  { key: 'stats', label: 'Stats', icon: BarChart3 },
+  { key: 'spatial', label: 'Spatial Atlas', icon: Globe },
+] as const;
+
+const feedSeed: FeedItem[] = [
+  { id: 'f1', icon: 'danger', text: 'Blocked unlimited USDC approval to unverified spender.', time: '2 min ago' },
+  { id: 'f2', icon: 'warning', text: 'Queued human veto window for NounsDAO Proposal #247.', time: '14 min ago' },
+  { id: 'f3', icon: 'success', text: 'Executed repay protection intent: 0.847 ETH on Aave.', time: '1h 23m ago' },
+  { id: 'f4', icon: 'accent', text: 'Swarm consensus updated to REVIEW_REQUIRED on policy conflict.', time: '2h 01m ago' },
+  { id: 'f5', icon: 'warning', text: 'Governance Safe flagged Compound v3.2 risk shift.', time: '3h 12m ago' },
+  { id: 'f6', icon: 'success', text: 'Prepared ADD_COLLATERAL intent: 2,400 USDC.', time: '5h 40m ago' },
+];
+
+const proposalSeed: Proposal[] = [
+  {
+    id: 'p247',
+    title: 'NounsDAO Proposal #247: Treasury Diversification into stETH',
+    source: 'Nouns DAO',
+    state: 'active',
+    risk: 67,
+    signals: ['TREASURY_RISK', 'GOV_POWER_SHIFT'],
+    summary:
+      'Diversification improves idle capital efficiency but increases correlated exposure during liquidity compression. Human veto review is recommended before queuing.',
+    recommendation: 'ABSTAIN',
+    confidence: 74,
+    vetoTime: 23 * 60 + 14,
+  },
+  {
+    id: 'c32',
+    title: 'Compound v3.2: Interest Rate Model Update',
+    source: 'Compound',
+    state: 'active',
+    risk: 88,
+    signals: ['URGENCY_FLAG', 'GOV_POWER_SHIFT'],
+    summary:
+      'Borrower rate curve changes increase tail liquidation risk for leveraged positions. Model lacks deep market stress simulations at whale scale.',
+    recommendation: 'AGAINST',
+    confidence: 83,
+    vetoTime: 11 * 60 + 5,
+  },
+  {
+    id: 's18',
+    title: 'Snapshot Signaling: Delegate Compensation Framework',
+    source: 'Snapshot',
+    state: 'voted',
+    risk: 45,
+    signals: ['GOV_POWER_SHIFT'],
+    summary:
+      'Compensation framework is broadly aligned with participation goals and includes clawback controls. Budget pressure remains manageable.',
+    recommendation: 'FOR',
+    confidence: 69,
+  },
+];
+
+const areaData = [
+  { t: 'Mon', v: 18 },
+  { t: 'Tue', v: 26 },
+  { t: 'Wed', v: 32 },
+  { t: 'Thu', v: 27 },
+  { t: 'Fri', v: 39 },
+  { t: 'Sat', v: 35 },
+  { t: 'Sun', v: 44 },
+];
+
+function cssValue(name: string) {
+  if (typeof window === 'undefined') return 'rgb(255,255,255)';
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BACKEND}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -305,6 +396,94 @@ function LandingBarsCanvas({ active }: { active: boolean }) {
         if (near180) color = 'rgba(255,109,0,0.22)';
         if (near80) color = 'rgba(255,109,0,0.42)';
 
+  const [bubbleOpen, setBubbleOpen] = useState(false);
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Spatial Atlas state ────────────────────────────────
+  const [spatialTab, setSpatialTab] = useState<'governance' | 'evolution'>('governance');
+  const [spaces, setSpaces] = useState<SpatialMemory[]>([]);
+  const [spacesLoading, setSpacesLoading] = useState(false);
+  const [spacesError, setSpacesError] = useState<string | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<'all' | 'low' | 'med' | 'high'>('all');
+  const [recFilter, setRecFilter] = useState<'all' | 'FOR' | 'AGAINST' | 'ABSTAIN'>('all');
+  const [atlas, setAtlas] = useState<AppSpatialMemory[]>([]);
+  const [atlasLoading, setAtlasLoading] = useState(false);
+  const [atlasError, setAtlasError] = useState<string | null>(null);
+  const [seedStatus, setSeedStatus] = useState<string | null>(null);
+
+  async function handleSeedTest() {
+    setSeedStatus('Seeding…');
+    const res = await seedTestApp();
+    if (res.ok) {
+      setSeedStatus(`✓ Seeded “${res.data?.title}” — generating scene…`);
+      // poll atlas after a short delay so the processing entry appears
+      setTimeout(() => { loadEvolutionAtlas(); setSeedStatus(null); }, 3000);
+    } else {
+      setSeedStatus(`✗ ${res.error}`);
+      setTimeout(() => setSeedStatus(null), 4000);
+    }
+  }
+
+  const loadGovernanceSpaces = useCallback(async () => {
+    setSpacesLoading(true);
+    const res = await getSpatialAtlas();
+    if (res.ok) { setSpaces(res.data.spaces); setSpacesError(null); }
+    else setSpacesError(res.error);
+    setSpacesLoading(false);
+  }, []);
+
+  const loadEvolutionAtlas = useCallback(async () => {
+    setAtlasLoading(true);
+    const res = await getAppEvolutionAtlas();
+    if (res.ok) { setAtlas(res.data.atlas); setAtlasError(null); }
+    else setAtlasError(res.error);
+    setAtlasLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (view === 'spatial' && spaces.length === 0 && !spacesLoading) loadGovernanceSpaces();
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (view === 'spatial' && spatialTab === 'evolution' && atlas.length === 0 && !atlasLoading) loadEvolutionAtlas();
+  }, [view, spatialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spatialFiltered = spaces.filter((s) => {
+    if (s.status !== 'complete') return true;
+    const sevOk = severityFilter === 'all' || spatialMaxSeverity(s) === severityFilter;
+    const recOk = recFilter === 'all' || s.voteRecommendation === recFilter;
+    return sevOk && recOk;
+  });
+
+  const [navHover, setNavHover] = useState('');
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const navButtons = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [indicatorX, setIndicatorX] = useState(0);
+
+  const [statKey, setStatKey] = useState<Record<string, number>>({ a: 0, b: 0, c: 0, d: 0, e: 0, hf: 0, cr: 0, lp: 0 });
+  const [headlineKey, setHeadlineKey] = useState(0);
+
+  const appView = connected ? view : 'landing';
+
+  const heading = useScramble('AgentSafe', 1000, headlineKey);
+  const statA = useScramble('14', 400, statKey.a);
+  const statB = useScramble('7', 400, statKey.b);
+  const statC = useScramble('3', 400, statKey.c);
+  const statD = useScramble('1,204', 400, statKey.d);
+  const statE = useScramble('847', 400, statKey.e);
+  const hf = useScramble('1.42', 400, statKey.hf);
+  const cr = useScramble('14,200 USDC', 400, statKey.cr);
+  const lp = useScramble('$1,840', 400, statKey.lp);
+
+  const consensusText = useScramble(consensus, 600, resultKey);
+
+  const proposals = useMemo(() => {
+    return proposalSeed.filter((p) => {
+      const tabMatch = proposalTab === 'all' ? true : proposalTab === 'active' ? p.state === 'active' : proposalTab === 'vetoed' ? p.state === 'vetoed' : p.state === 'voted';
+      const queryMatch = proposalQuery ? p.title.toLowerCase().includes(proposalQuery.toLowerCase()) : true;
+      return tabMatch && queryMatch;
+    });
+  }, [proposalQuery, proposalTab]);
         ctx.fillStyle = color;
         ctx.fillRect(x, canvas.height - finalHeight, barWidth, finalHeight);
       }
@@ -1895,6 +2074,856 @@ function AppShellInternal() {
           * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
         }
       `}</style>
+
+      <canvas ref={canvasRef} className="canvas-bg" />
+
+      <div className="app">
+        <header className="topbar">
+          <div className="topbar-inner">
+            <div className="wordmark">AgentSafe</div>
+            <div className="center-network" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 12 }}>
+              <Globe size={12} strokeWidth={1.5} />
+              <span className="pulse-ring" style={{ width: 8, height: 8 }}>
+                <span className="dot" style={{ width: 8, height: 8, background: 'var(--success)' }} />
+                <span className="ring" style={{ borderColor: 'var(--success)' }} />
+                <span className="ring b" style={{ borderColor: 'var(--success)' }} />
+              </span>
+              Base Mainnet
+            </div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {connected && (
+                <button className="chip-wallet" onClick={() => copy(walletAddress, 'wallet')}>
+                  {`${walletAddress.slice(0, 8)}...${walletAddress.slice(-4)}`}
+                  {copied === 'wallet' ? <CheckCircle2 size={14} strokeWidth={1.5} className="copy-icon" style={{ opacity: 1, color: 'var(--success)' }} /> : <Copy size={14} strokeWidth={1.5} className="copy-icon" />}
+                </button>
+              )}
+              {connected && (
+                <button className="icon-btn" onClick={() => { setConnected(false); setView('landing'); }}>
+                  <LogOut size={18} strokeWidth={1.5} />
+                </button>
+              )}
+              <button className="icon-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
+                {theme === 'dark' ? <Sun size={20} strokeWidth={1.5} /> : <Moon size={20} strokeWidth={1.5} />}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {appView === 'landing' ? (
+          <section className="hero-wrap">
+            <div>
+              <h1 className="hero-title">{heading}</h1>
+              <div className="hero-line" />
+              <div className="hero-sub">Your wallet&apos;s immune system.</div>
+
+              <div className="feature-row">
+                <span className="micro-badge"><span className="micro-dot approval" /><ShieldAlert size={14} strokeWidth={1.5} /> APPROVAL GUARD</span>
+                <span className="micro-badge"><span className="micro-dot governance" /><Vote size={14} strokeWidth={1.5} /> GOVERNANCE SAFE</span>
+                <span className="micro-badge"><span className="micro-dot liquidation" /><Activity size={14} strokeWidth={1.5} /> LIQUIDATION PREVENTION</span>
+              </div>
+
+              <div style={{ marginTop: 48 }}>
+                <MagneticButton className="btn-primary cta" enable={hoverCapable && !mobile && !reduced} onClick={connect} style={{ width: 240 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Wallet size={18} strokeWidth={1.5} />Connect Wallet</span>
+                </MagneticButton>
+              </div>
+
+              <div style={{ position: 'fixed', left: '50%', bottom: 16, transform: 'translateX(-50%)', display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--text-subtle)', fontSize: 11 }}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><rect width="10" height="10" fill="currentColor" /></svg>
+                <span className="mono">Built on Base</span>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <main className="main-wrap">
+            {view === 'dashboard' && (
+              <section className="lane-layout">
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {[
+                    { name: 'Sentinel', color: 'var(--cluster-approval)', icon: ShieldAlert, text: 'Monitoring approvals and spender contracts.', last: '2 min ago' },
+                    { name: 'Scam Detector', color: 'var(--cluster-governance)', icon: AlertTriangle, text: 'Evaluating governance payloads and risk shifts.', last: '14 min ago' },
+                    { name: 'Liquidation Predictor', color: 'var(--cluster-liquidation)', icon: HeartPulse, text: 'Watching health factor and collateral drift.', last: '1h 23m ago' },
+                  ].map((agent, i) => {
+                    const Icon = agent.icon;
+                    return (
+                      <Reveal key={agent.name} index={i}>
+                        <div className="hud-card interactive trace agent-card" onMouseMove={cardGlow} style={{ borderLeft: `2px solid ${agent.color}` }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <Icon size={18} strokeWidth={1.5} color={agent.color} />
+                              <strong style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 18 }}>{agent.name}</strong>
+                            </div>
+                            <span className="pulse-ring" style={{ '--accent': agent.color } as React.CSSProperties}>
+                              <span className="dot" style={{ background: agent.color }} />
+                              <span className="ring" style={{ borderColor: agent.color }} />
+                              <span className="ring b" style={{ borderColor: agent.color }} />
+                            </span>
+                          </div>
+                          <p style={{ margin: '10px 0 4px', fontSize: 13, color: 'var(--text-muted)' }}>{agent.text}</p>
+                          <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>Last action: {agent.last}</div>
+                          <svg width="100%" height="40" viewBox="0 0 240 40" style={{ marginTop: 10 }}>
+                            <path d="M0 30 L40 22 L80 26 L120 18 L160 20 L200 12 L240 16" fill="none" stroke={agent.color} strokeWidth="1.5" />
+                          </svg>
+                          <div style={{ textAlign: 'right' }}><button className="btn-ghost">Details</button></div>
+                        </div>
+                      </Reveal>
+                    );
+                  })}
+                </div>
+
+                <div>
+                  <Reveal index={3}>
+                    <div className={`radar ${analysisRunning ? 'fast' : ''}`}>
+                      <svg width="200" height="200" viewBox="0 0 200 200">
+                        <circle className="track" cx="100" cy="100" r="90" fill="none" strokeWidth="2" />
+                        <circle className="sweep" cx="100" cy="100" r="90" fill="none" strokeWidth="2" />
+                      </svg>
+                      <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+                        <div>
+                          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 14, letterSpacing: '0.15em', color: 'var(--accent)', fontWeight: 700 }}>ACTIVE</div>
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>3 AGENTS</div>
+                        </div>
+                      </div>
+                    </div>
+                  </Reveal>
+
+                  <Reveal index={4}>
+                    <div className="ticker">
+                      {feed.length ? (
+                        feed.map((row) => {
+                          const color = row.icon === 'danger' ? 'var(--danger)' : row.icon === 'success' ? 'var(--success)' : row.icon === 'warning' ? 'var(--warning)' : 'var(--accent)';
+                          const Icon = row.icon === 'danger' ? XCircle : row.icon === 'success' ? CheckCircle2 : ArrowRightLeft;
+                          return (
+                            <div key={row.id} className={`tick-row ${feedNew === row.id ? 'new' : ''}`}>
+                              <Icon size={14} strokeWidth={1.5} color={color} />
+                              <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.text}</span>
+                              <span style={{ color: 'var(--text-subtle)', fontSize: 11 }}>{row.time}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="scan-text">SCANNING...</div>
+                      )}
+                    </div>
+                  </Reveal>
+
+                  <Reveal index={5}>
+                    <div className="pill-row">
+                      {[
+                        { id: 'a', label: 'Approvals Blocked', value: statA, icon: ShieldAlert, color: 'var(--danger)' },
+                        { id: 'b', label: 'Proposals', value: statB, icon: Vote, color: 'var(--cluster-governance)' },
+                        { id: 'c', label: 'Saved', value: statC, icon: Activity, color: 'var(--success)' },
+                      ].map((pill) => {
+                        const Icon = pill.icon;
+                        return (
+                          <div
+                            key={pill.id}
+                            className="stat-pill"
+                            onMouseEnter={() => setStatKey((prev) => ({ ...prev, [pill.id]: prev[pill.id] + 1 }))}
+                          >
+                            <Icon size={16} strokeWidth={1.5} color={pill.color} />
+                            <span className="mono" style={{ fontSize: 18 }}>{pill.value}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{pill.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Reveal>
+                </div>
+
+                <div>
+                  <div className="label" style={{ marginBottom: 8 }}>REVIEW QUEUE</div>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {review.length ? (
+                      review.map((item, idx) => (
+                        <Reveal key={item.id} index={idx + 6}>
+                          <div className={`hud-card interactive queue-card ${item.state === 'flyout' ? 'flyout' : ''} ${item.state === 'signed' ? 'signed' : ''}`} onMouseMove={cardGlow}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span className={`badge ${item.type === 'BLOCK' ? 'danger' : item.type === 'REPAY' ? 'success' : 'warning'}`}>{item.type}</span>
+                              <span className="mono" style={{ fontSize: 28, color: item.risk > 70 ? 'var(--danger)' : item.risk > 35 ? 'var(--warning)' : 'var(--success)' }}>{item.risk}</span>
+                            </div>
+                            <p style={{ margin: '8px 0', fontSize: 13 }}>{item.text}</p>
+                            <RiskBar risk={item.risk} />
+                            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                              <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced} style={{ height: 36, flex: 1 }} onClick={() => signReview(item.id)}>
+                                Review & Sign
+                              </MagneticButton>
+                              <button className="btn-ghost" onClick={() => dismissReview(item.id)}>Dismiss</button>
+                            </div>
+                          </div>
+                        </Reveal>
+                      ))
+                    ) : (
+                      <div className="empty-queue">
+                        <div>
+                          <CheckCircle2 className="rot-slow" size={36} strokeWidth={1.5} color="var(--success)" />
+                          <div style={{ marginTop: 8, fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 20 }}>All protected</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {view === 'approval' && (
+              <section>
+                <div style={{ textAlign: 'center', marginBottom: 20, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <ShieldAlert size={28} strokeWidth={1.5} color="var(--accent)" />
+                  <h2 style={{ margin: 0, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 32, color: 'var(--accent)' }}>APPROVAL GUARD</h2>
+                </div>
+
+                <div className="analysis-shell">
+                  <div className="label">Target Address</div>
+                  <input className="input mono" value={target} onChange={(event) => setTarget(event.target.value)} />
+                  <div style={{ marginTop: 6, color: 'var(--text-subtle)', fontSize: 11 }}>Resolving...</div>
+
+                  <div className="label" style={{ marginTop: 12 }}>Transaction Kind</div>
+                  <div className="kind-row">
+                    {(['APPROVAL', 'LEND', 'OTHER'] as const).map((k) => (
+                      <button key={k} className={`kind-pill ${kind === k ? 'active' : ''}`} onClick={() => setKind(k)}>{k}</button>
+                    ))}
+                  </div>
+
+                  <div className="label" style={{ marginTop: 12 }}>Calldata</div>
+                  <textarea className="textarea mono" rows={4} value={calldata} onChange={(event) => setCalldata(event.target.value)} />
+
+                  <MagneticButton
+                    className="btn-primary"
+                    style={{ width: '100%', marginTop: 14 }}
+                    enable={hoverCapable && !mobile && !reduced}
+                    onClick={analyzeApproval}
+                  >
+                    ANALYZE
+                  </MagneticButton>
+                </div>
+
+                <div className="expand-wrap" style={{ maxHeight: analyzing || analyzed ? 800 : 0, marginTop: 14 }}>
+                  <div className="analysis-shell" style={{ marginTop: 14 }}>
+                    {analyzing && (
+                      <div>
+                        <div className="risk-track"><div className="risk-fill" style={{ width: '100%', background: 'var(--accent)' }} /></div>
+                        <div style={{ marginTop: 10, color: 'var(--text-muted)' }}>Running multi-agent analysis...</div>
+                      </div>
+                    )}
+
+                    {analyzed && (
+                      <>
+                        <div className="risk-track"><div className="risk-fill" style={{ width: '100%', background: consensus === 'BLOCKED' ? 'var(--danger)' : consensus === 'REVIEW' ? 'var(--warning)' : 'var(--success)' }} /></div>
+
+                        <div className="timeline">
+                          {[
+                            { icon: ShieldAlert, name: 'Sentinel' },
+                            { icon: AlertTriangle, name: 'Scam Detector' },
+                            { icon: Activity, name: 'Liquidation Predictor' },
+                          ].flatMap((n, i) => {
+                            const Icon = n.icon;
+                            const done = step > i;
+                            const lineDone = step > i + 1;
+                            const out: React.ReactNode[] = [
+                              <div key={`${n.name}-n`} className="tl-node">
+                                <div className={`tl-circle ${done ? 'done' : ''}`}>
+                                  <Icon size={18} strokeWidth={1.5} color={done ? 'var(--accent)' : 'var(--text-subtle)'} />
+                                </div>
+                                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>{n.name}</div>
+                              </div>,
+                            ];
+                            if (i < 2) out.push(<div key={`${n.name}-l`} className={`tl-line ${lineDone ? 'done' : ''}`}><span /></div>);
+                            return out;
+                          })}
+                        </div>
+
+                        <div className="consensus-word" style={{ color: consensus === 'BLOCKED' ? 'var(--danger)' : consensus === 'REVIEW' ? 'var(--warning)' : 'var(--success)' }}>
+                          {consensusText}
+                        </div>
+                        <p style={{ marginTop: 0, textAlign: 'center', color: 'var(--text-muted)' }}>
+                          {consensus === 'BLOCKED'
+                            ? 'Approval Guard proposes BLOCK and REVOKE intent.'
+                            : consensus === 'REVIEW'
+                              ? 'Policy conflict detected. Human review required.'
+                              : 'No high-risk patterns detected. Safe to execute.'}
+                        </p>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced} style={{ height: 44 }}>
+                            <Play size={16} strokeWidth={1.5} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />Sign & Execute
+                          </MagneticButton>
+                          <button className="btn-ghost">Dismiss</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {view === 'governance' && (
+              <section>
+                <div className="hud-card" style={{ borderRadius: 16 }}>
+                  <input className="input" placeholder="Search proposals" value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} style={{ height: 52, borderRadius: 16 }} />
+                  <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {(['all', 'active', 'vetoed', 'voted'] as const).map((tab) => (
+                      <button key={tab} className={`kind-pill ${proposalTab === tab ? 'active' : ''}`} onClick={() => setProposalTab(tab)}>
+                        {tab.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+                  {proposals.map((proposal, idx) => (
+                    <Reveal key={proposal.id} index={idx}>
+                      <ProposalCard
+                        proposal={proposal}
+                        open={proposalOpen === proposal.id}
+                        onToggle={() => setProposalOpen((prev) => (prev === proposal.id ? '' : proposal.id))}
+                        reduced={reduced}
+                        enableMagnetic={hoverCapable && !mobile && !reduced}
+                        mobile={mobile}
+                      />
+                    </Reveal>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {view === 'liquidation' && (
+              <section>
+                <div className="hud-card">
+                  <div className="gauge-row">
+                    <div style={{ textAlign: 'center' }} onMouseEnter={() => setStatKey((prev) => ({ ...prev, hf: prev.hf + 1 }))}>
+                      <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true">
+                        <circle cx="100" cy="100" r="88" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
+                        <circle
+                          cx="100"
+                          cy="100"
+                          r="88"
+                          fill="none"
+                          stroke={1.42 < 1.2 ? 'var(--danger)' : 1.42 < 1.5 ? 'var(--warning)' : 'var(--success)'}
+                          strokeWidth="8"
+                          strokeDasharray={553}
+                          strokeDashoffset={553 * (1 - 1.42 / 3)}
+                          strokeLinecap="round"
+                          transform="rotate(-90 100 100)"
+                          style={{ transition: 'stroke-dashoffset 800ms ease-out' }}
+                        />
+                        <text x="100" y="104" textAnchor="middle" className="mono" style={{ fill: 'var(--text)', fontSize: 36, fontWeight: 500 }}>{hf}</text>
+                      </svg>
+                      <div className="label">HEALTH FACTOR</div>
+                    </div>
+                    <div className="divider-v" />
+                    <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, cr: prev.cr + 1 }))}>
+                      <div className="label">COLLATERAL RATIO</div>
+                      <div className="mono" style={{ fontSize: 36, fontWeight: 500, marginTop: 10 }}>{cr}</div>
+                    </div>
+                    <div className="divider-v" />
+                    <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, lp: prev.lp + 1 }))}>
+                      <div className="label">LIQUIDATION PRICE</div>
+                      <div className="mono" style={{ fontSize: 36, fontWeight: 500, marginTop: 10 }}>{lp}</div>
+                      <div style={{ color: 'var(--text-subtle)', fontSize: 12 }}>Current: $2,340</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+                  {[
+                    { id: 'l1', critical: true, text: 'Aave health factor dropped to 0.98. Immediate action required.', action: 'REPAY 0.5 ETH' },
+                    { id: 'l2', critical: false, text: 'Compound collateral ratio near warning threshold.', action: 'ADD_COLLATERAL 2,400 USDC' },
+                    { id: 'l3', critical: false, text: 'MakerDAO vault stable; monitor liquidation distance.', action: 'MONITOR' },
+                  ].map((alert) => (
+                    <div key={alert.id} className={`hud-card interactive alert-card ${alert.critical ? 'critical' : ''}`} onMouseMove={cardGlow} style={{ borderLeft: `${alert.critical ? 3 : 1}px solid ${alert.critical ? 'var(--danger)' : 'var(--border)'}`, background: alert.critical ? 'var(--danger-muted)' : undefined }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '24px 1fr auto', alignItems: 'center', gap: 12 }}>
+                        <HeartPulse size={24} strokeWidth={1.5} color={alert.critical ? 'var(--danger)' : 'var(--warning)'} />
+                        <div>
+                          {alert.critical && <span className="badge danger" style={{ animation: 'scan-pulse 1200ms ease-in-out infinite' }}>CRITICAL</span>}
+                          <div style={{ marginTop: 6 }}>{alert.text}</div>
+                          <span className="badge neutral" style={{ marginTop: 8 }}>{alert.action}</span>
+                        </div>
+                        <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced}>Execute Protection</MagneticButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {view === 'stats' && (
+              <section>
+                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1px 1fr', gap: 20, alignItems: 'center', textAlign: 'center', marginBottom: 20 }}>
+                  <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, d: prev.d + 1 }))}>
+                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 80, lineHeight: 1 }}>{statD}</div>
+                    <div className="label">SWARM RUNS</div>
+                  </div>
+                  {!mobile && <div className="divider-v" style={{ height: 80 }} />}
+                  <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, e: prev.e + 1 }))}>
+                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 80, lineHeight: 1 }}>{statE}</div>
+                    <div className="label">ACTIONS PROPOSED</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
+                  {['Sentinel', 'Scam Detector', 'Liquidation Predictor'].map((name) => (
+                    <div key={name} className="hud-card interactive" onMouseMove={cardGlow}>
+                      <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 18 }}>{name}</div>
+                      <div style={{ height: 150, marginTop: 8 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={areaData}>
+                            <defs>
+                              <linearGradient id={`grad-${name}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.25} />
+                                <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <XAxis dataKey="t" axisLine={{ stroke: 'var(--border)' }} tickLine={false} tick={{ fill: 'var(--text-subtle)', fontSize: 11 }} />
+                            <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11, color: 'var(--text)' }} />
+                            <Area type="monotone" dataKey="v" stroke="var(--accent)" strokeWidth={1.5} fill={`url(#grad-${name})`} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hud-card" style={{ marginTop: 14 }}>
+                  {[{
+                    id: 's1',
+                    block: '24681359',
+                    hash: '0x3a8f92b4e1d0c6f8a2b5e9d3c7f1a4b8e2d6c0f9',
+                    kind: 'APPROVAL',
+                    outcome: 'BLOCK',
+                    time: '8 min ago',
+                    details: 'Sentinel and Scam Detector reached block consensus with 0.94 confidence.',
+                  }, {
+                    id: 's2',
+                    block: '24681211',
+                    hash: '0x6d2ca2b7f1806c4eea5603f5a1c7734b0c2e3a1fbc8398e70a46f2a0c2de7130',
+                    kind: 'GOV_VOTE',
+                    outcome: 'VETO',
+                    time: '37 min ago',
+                    details: 'Human veto executed before countdown close due to treasury risk drift.',
+                  }].map((row) => (
+                    <StatsRow key={row.id} row={row} onCopy={copy} copied={copied === row.id} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {view === 'spatial' && (
+              <section className="space-y-6">
+                {/* Header */}
+                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-violet-500/15 via-transparent to-cyan-500/15 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.35)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-200/80">Blockade Labs × AgentSafe</p>
+                  <h2 className="mt-2 text-3xl font-semibold text-white">Spatial Atlas</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-300">
+                    360° spatial environments for governance proposals and the agent&apos;s own creative evolution.
+                    Each environment maps domains to spatial zones with multi-agent markers.
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-4">
+                    <AtlasStat label="Governance Spaces" value={spacesLoading ? '…' : String(spaces.length)} />
+                    <AtlasStat label="Complete" value={spacesLoading ? '…' : String(spaces.filter(s => s.status === 'complete').length)} />
+                    <AtlasStat label="App Scenes" value={atlasLoading ? '…' : String(atlas.length)} />
+                    <AtlasStat label="Apps Complete" value={atlasLoading ? '…' : String(atlas.filter(a => a.status_spatial === 'complete').length)} />
+                  </div>
+                </div>
+
+                {/* Tab switcher */}
+                <div className="flex gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
+                  <button
+                    onClick={() => setSpatialTab('governance')}
+                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                      spatialTab === 'governance'
+                        ? 'bg-violet-500/20 text-violet-200 border border-violet-400/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Governance Proposals
+                  </button>
+                  <button
+                    onClick={() => setSpatialTab('evolution')}
+                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                      spatialTab === 'evolution'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    App Evolution Atlas
+                  </button>
+                </div>
+
+                {/* ── GOVERNANCE TAB ── */}
+                {spatialTab === 'governance' && (
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as typeof severityFilter)} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200">
+                          <option value="all">All Severities</option>
+                          <option value="high">High</option>
+                          <option value="med">Medium</option>
+                          <option value="low">Low</option>
+                        </select>
+                        <select value={recFilter} onChange={(e) => setRecFilter(e.target.value as typeof recFilter)} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200">
+                          <option value="all">All Recommendations</option>
+                          <option value="FOR">FOR</option>
+                          <option value="AGAINST">AGAINST</option>
+                          <option value="ABSTAIN">ABSTAIN</option>
+                        </select>
+                        <button onClick={loadGovernanceSpaces} className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">Refresh</button>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">Showing {spatialFiltered.length} of {spaces.length} environments</p>
+                    </div>
+                    {spacesError && (
+                      <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-rose-200">
+                        {spacesError}
+                        <button onClick={loadGovernanceSpaces} className="ml-3 underline hover:text-white">Retry</button>
+                      </div>
+                    )}
+                    {spacesLoading && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-300 animate-pulse">Loading spatial environments…</div>}
+                    {!spacesLoading && spatialFiltered.length === 0 && !spacesError && (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-400">No spatial environments yet. Generate one from the Governance view.</div>
+                    )}
+                    {!spacesLoading && spatialFiltered.length > 0 && (
+                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {spatialFiltered.map((space) => (
+                          <SpaceCard key={space.proposalId} space={space} recColor={spatialRecColor} recBg={spatialRecBg} sevBadge={spatialSevBadge} maxSeverity={spatialMaxSeverity} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── EVOLUTION TAB ── */}
+                {spatialTab === 'evolution' && (
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex items-center justify-between">
+                      <p className="text-sm text-slate-300">Every Base mini-app the agent has deployed — visualised as a Blockade Labs 360° environment.</p>
+                      <div className="ml-4 shrink-0 flex gap-2">
+                        <button onClick={handleSeedTest} className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 transition hover:bg-cyan-500/20 font-medium">
+                          ⚡ Seed Test App
+                        </button>
+                        <button onClick={loadEvolutionAtlas} className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">Refresh</button>
+                      </div>
+                    </div>
+                    {seedStatus && (
+                      <div className={`rounded-xl border px-4 py-2 text-sm ${
+                        seedStatus.startsWith('✓') ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+                        : seedStatus.startsWith('✗') ? 'border-red-400/30 bg-red-500/10 text-rose-200'
+                        : 'border-amber-400/30 bg-amber-500/10 text-amber-200 animate-pulse'
+                      }`}>
+                        {seedStatus}
+                      </div>
+                    )}
+                    {atlasError && (
+                      <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-rose-200">
+                        {atlasError}
+                        <button onClick={loadEvolutionAtlas} className="ml-3 underline hover:text-white">Retry</button>
+                      </div>
+                    )}
+                    {atlasLoading && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-300 animate-pulse">Loading evolution atlas…</div>}
+                    {!atlasLoading && atlas.length === 0 && !atlasError && (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-400">No app scenes yet. Deploy an app — a 360° scene will be auto-generated.</div>
+                    )}
+                    {!atlasLoading && atlas.length > 0 && (
+                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {atlas.map((mem) => (
+                          <AppSceneCard key={mem.appId} mem={mem} sevBadge={spatialSevBadge} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
+          </main>
+        )}
+
+        {connected && (
+          <>
+            <div className="bubble-nav" ref={navRef}>
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = view === item.key;
+                const hovered = navHover === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    ref={(el) => {
+                      navButtons.current[item.key] = el;
+                    }}
+                    className={`bubble-btn ${active ? 'active' : ''}`}
+                    onMouseEnter={() => setNavHover(item.key)}
+                    onMouseLeave={() => setNavHover('')}
+                    onClick={() => setView(item.key as View)}
+                  >
+                    <Icon size={20} strokeWidth={1.5} />
+                    <span className="bubble-label">{active || hovered ? item.label : ''}</span>
+                  </button>
+                );
+              })}
+              <span className="nav-indicator" style={{ left: indicatorX }} />
+            </div>
+
+            <div className="swarm-bubble" ref={bubbleRef}>
+              <button className="swarm-btn" onClick={() => setBubbleOpen((prev) => !prev)}>
+                <span className="pulse-ring">
+                  <span className="dot" />
+                  <span className="ring" />
+                  <span className="ring b" />
+                </span>
+                <Bot size={20} strokeWidth={1.5} />
+                <span className="swarm-btn-label">3 Agents Active</span>
+              </button>
+
+              {bubbleOpen && (
+                <div className="swarm-panel">
+                  {[
+                    { icon: ShieldAlert, text: 'Sentinel blocked dangerous approval intent', time: '2 min ago' },
+                    { icon: Vote, text: 'Governance Safe scored proposal risk at 67', time: '14 min ago' },
+                    { icon: Activity, text: 'Liquidation Predictor queued repay 0.847 ETH', time: '1h 23m ago' },
+                  ].map((entry) => {
+                    const Icon = entry.icon;
+                    return (
+                      <div key={entry.text} style={{ display: 'grid', gridTemplateColumns: '18px 1fr', gap: 8, marginBottom: 10 }}>
+                        <Icon size={16} strokeWidth={1.5} color="var(--accent)" />
+                        <div>
+                          <div style={{ fontSize: 13 }}>{entry.text}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{entry.time}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button className="btn-ghost" onClick={() => setView('dashboard')} style={{ width: '100%' }}>
+                    View All Activity
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Spatial Atlas pure helpers ────────────────────────
+
+function spatialSevBadge(sev: string): string {
+  if (sev === 'high') return 'bg-rose-500/20 text-rose-300 border-rose-400/30';
+  if (sev === 'med') return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
+  return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
+}
+function spatialMaxSeverity(mem: SpatialMemory): 'low' | 'med' | 'high' {
+  if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'high')) return 'high';
+  if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'med')) return 'med';
+  return 'low';
+}
+function spatialRecColor(rec: string): string {
+  if (rec === 'FOR') return 'text-emerald-300';
+  if (rec === 'AGAINST') return 'text-rose-300';
+  return 'text-amber-300';
+}
+function spatialRecBg(rec: string): string {
+  if (rec === 'FOR') return 'border-emerald-400/30 bg-emerald-400/10';
+  if (rec === 'AGAINST') return 'border-rose-400/30 bg-rose-400/10';
+  return 'border-amber-400/30 bg-amber-400/10';
+}
+
+// ─── AtlasStat ───────────────────────────────────────────
+function AtlasStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/15 bg-black/20 px-4 py-3">
+      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+// ─── SpaceCard ───────────────────────────────────────────
+function SpaceCard({ space, recColor, recBg, sevBadge, maxSeverity }: {
+  space: SpatialMemory;
+  recColor: (r: string) => string;
+  recBg: (r: string) => string;
+  sevBadge: (s: string) => string;
+  maxSeverity: (m: SpatialMemory) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (space.status === 'processing' || space.status === 'pending') {
+    return (
+      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 animate-pulse">
+        <p className="text-xs uppercase tracking-wide text-amber-300">Processing…</p>
+        <p className="mt-1 text-sm text-slate-300 font-mono truncate">{space.proposalId.slice(0, 16)}…</p>
+      </div>
+    );
+  }
+  if (space.status === 'error') {
+    return (
+      <div className="rounded-2xl border border-red-400/20 bg-red-500/5 p-4">
+        <p className="text-xs uppercase tracking-wide text-rose-300">Generation Failed</p>
+        <p className="mt-1 text-sm text-slate-300 font-mono truncate">{space.proposalId.slice(0, 16)}…</p>
+        {space.errorMessage && <p className="mt-1 text-xs text-rose-400">{space.errorMessage}</p>}
+      </div>
+    );
+  }
+  return (
+    <article className="group rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden transition hover:border-white/25 hover:bg-white/[0.05]">
+      {space.thumbUrl && (
+        <div className="relative h-40 w-full overflow-hidden bg-black/50">
+          <img src={space.thumbUrl} alt={space.proposalId.slice(0, 12)} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
+            <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${recBg(space.voteRecommendation)} ${recColor(space.voteRecommendation)}`}>{space.voteRecommendation}</span>
+            <span className={`rounded-full border px-2 py-0.5 text-xs ${sevBadge(maxSeverity(space))}`}>{maxSeverity(space).toUpperCase()}</span>
+          </div>
+        </div>
+      )}
+      <div className="p-4 space-y-3">
+        <div>
+          <p className="text-xs text-slate-400 font-mono truncate">{space.proposalId.slice(0, 24)}…</p>
+          <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">Scene: {space.sceneHash.slice(0, 18)}…</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Confidence:</span>
+          <div className="flex-1 h-1.5 rounded-full bg-white/10">
+            <div className="h-1.5 rounded-full bg-gradient-to-r from-cyan-300 to-indigo-300" style={{ width: `${space.confidence}%` }} />
+          </div>
+          <span className="text-xs text-slate-300">{space.confidence}%</span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {space.agentMarkers.map((m: AgentMarker, i: number) => (
+            <span key={i} className={`rounded px-1.5 py-0.5 text-[10px] border ${sevBadge(m.severity)}`} title={`${m.agentName} in ${m.zone}: ${m.rationale}`}>{m.agentName}</span>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {space.detectedZones.map((z: DetectedZone, i: number) => (
+            <span key={i} className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-300" title={z.meaning}>{z.zone}</span>
+          ))}
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="text-xs text-cyan-300 hover:text-cyan-200 transition">{expanded ? 'Hide Details' : 'Show Details'}</button>
+        {expanded && (
+          <div className="space-y-3 border-t border-white/10 pt-3">
+            <p className="text-xs text-slate-300 italic">{space.spatialSummary}</p>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Agent Markers</p>
+              {space.agentMarkers.map((m: AgentMarker, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs mb-1">
+                  <span className={`shrink-0 rounded px-1 py-0.5 border ${sevBadge(m.severity)}`}>{m.severity.toUpperCase()}</span>
+                  <span className="text-slate-300"><strong>{m.agentName}</strong> @ {m.zone} — {m.rationale}</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Detected Zones</p>
+              {space.detectedZones.map((z: DetectedZone, i: number) => (
+                <div key={i} className="text-xs text-slate-300 mb-1"><strong>{z.zone}</strong> ({z.riskDomain}) — {z.meaning}</div>
+              ))}
+            </div>
+            {space.fileUrl && (
+              <a href={space.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-violet-400/35 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20">Enter Proposal Space ↗</a>
+            )}
+            <div className="text-[10px] text-slate-500 flex gap-3">
+              <span>Created: {new Date(space.createdAt).toLocaleString()}</span>
+              <span>Visited: {new Date(space.visitedAt).toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+// ─── AppSceneCard ────────────────────────────────────────
+function AppSceneCard({ mem, sevBadge }: { mem: AppSpatialMemory; sevBadge: (s: string) => string }) {
+  const [expanded, setExpanded] = useState(false);
+  const maxSev = mem.agentMarkers.some((m: AppSpatialMarker) => m.severity === 'high') ? 'high'
+    : mem.agentMarkers.some((m: AppSpatialMarker) => m.severity === 'med') ? 'med' : 'low';
+  const statusColor = mem.status === 'SUPPORTED' || mem.status === 'HANDED_TO_USER'
+    ? 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10'
+    : mem.status === 'DROPPED' ? 'text-rose-300 border-rose-400/30 bg-rose-400/10'
+    : 'text-amber-300 border-amber-400/30 bg-amber-400/10';
+  if (mem.status_spatial === 'processing' || mem.status_spatial === 'pending') {
+    return (
+      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 animate-pulse">
+        <p className="text-xs uppercase tracking-wide text-amber-300">Generating Scene…</p>
+        <p className="mt-1 text-sm text-slate-300 truncate">{mem.title || mem.appId.slice(0, 20)}</p>
+      </div>
+    );
+  }
+  if (mem.status_spatial === 'error') {
+    return (
+      <div className="rounded-2xl border border-red-400/20 bg-red-500/5 p-4">
+        <p className="text-xs uppercase tracking-wide text-rose-300">Scene Failed</p>
+        <p className="mt-1 text-sm text-slate-300 truncate">{mem.title || mem.appId.slice(0, 20)}</p>
+        {mem.errorMessage && <p className="mt-1 text-xs text-rose-400">{mem.errorMessage}</p>}
+      </div>
+    );
+  }
+  return (
+    <article className="group rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden transition hover:border-white/25 hover:bg-white/[0.05]">
+      {mem.thumbUrl && (
+        <div className="relative h-40 w-full overflow-hidden bg-black/50">
+          <img src={mem.thumbUrl} alt={mem.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
+            <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${statusColor}`}>{mem.status}</span>
+            <span className={`rounded-full border px-2 py-0.5 text-xs ${sevBadge(maxSev)}`}>{maxSev.toUpperCase()}</span>
+          </div>
+        </div>
+      )}
+      <div className="p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-white truncate">{mem.title || mem.appId.slice(0, 20)}</p>
+          <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">Scene: {mem.sceneHash.slice(0, 18)}…</p>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {mem.trendTags.slice(0, 5).map((t, i) => (
+            <span key={i} className="rounded border border-cyan-400/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">{t}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-1 text-center">
+          {([{ label: 'Users', val: String(mem.metrics.users) }, { label: 'Revenue', val: `$${mem.metrics.revenueUsd}` }, { label: 'Impressions', val: String(mem.metrics.impressions) }]).map(({ label, val }) => (
+            <div key={label} className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5">
+              <p className="text-[9px] uppercase tracking-wide text-slate-400">{label}</p>
+              <p className="text-sm font-semibold text-white">{val}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {mem.agentMarkers.map((m: AppSpatialMarker, i: number) => (
+            <span key={i} className={`rounded px-1.5 py-0.5 text-[10px] border ${sevBadge(m.severity)}`} title={`${m.agentName} @ ${m.zone}: ${m.rationale}`}>{m.agentName}</span>
+          ))}
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="text-xs text-cyan-300 hover:text-cyan-200 transition">{expanded ? 'Hide Details' : 'Show Details'}</button>
+        {expanded && (
+          <div className="space-y-3 border-t border-white/10 pt-3">
+            <p className="text-xs text-slate-300 italic">{mem.spatialSummary}</p>
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-500/5 p-2">
+              <p className="text-[10px] uppercase tracking-wide text-cyan-400 mb-1">Evolution Note</p>
+              <p className="text-xs text-cyan-200">{mem.evolutionNote}</p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Spatial Zones</p>
+              {mem.detectedZones.map((z: AppSpatialZone, i: number) => (
+                <div key={i} className="text-xs text-slate-300 mb-1"><strong>{z.zone}</strong> ({z.domain}) — {z.meaning}</div>
+              ))}
+            </div>
+            {mem.fileUrl && (
+              <a href={mem.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20">Enter App Space ↗</a>
+            )}
+            <p className="text-[10px] text-slate-500">Created: {new Date(mem.createdAt).toLocaleString()}</p>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function StatsRow({
+  row,
+  copied,
+  onCopy,
+}: {
+  row: { id: string; block: string; hash: string; kind: string; outcome: string; time: string; details: string };
+  copied: boolean;
+  onCopy: (v: string, k: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
     </div>
   );
 }

@@ -44,9 +44,7 @@ export function IntentCard({ intent }: IntentCardProps) {
   const isExecutable =
     !demoMode &&
     (intent.action === 'REVOKE_APPROVAL' ||
-      intent.action === 'EXECUTE_TX' ||
-      intent.action === 'LIQUIDATION_REPAY' ||
-      intent.action === 'LIQUIDATION_ADD_COLLATERAL');
+      intent.action === 'EXECUTE_TX');
 
   async function handleExecute() {
     setExecuting(true);

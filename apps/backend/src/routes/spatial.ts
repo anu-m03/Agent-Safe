@@ -92,12 +92,14 @@ function buildSkyboxPrompt(title: string, body: string): string {
   }
 
   elements.push(
-    'Multiple AI agent sentinel figures positioned in different zones, each glowing with their respective alert color',
-    `The proposal "${title.slice(0, 80)}" displayed as holographic text in the center of the space`,
-    'Atmosphere: dramatic sci-fi, dark ambient, high detail, panoramic 360 degree environment',
+    'Multiple AI agent sentinel figures in each zone glowing with alert colors',
+    `Proposal: "${title.slice(0, 60)}" as holographic text center stage`,
+    'Atmosphere: dramatic sci-fi, dark ambient, high detail, panoramic 360',
   );
 
-  return elements.join('. ') + '.';
+  const full = elements.join('. ') + '.';
+  // Blockade Labs max prompt length is 600 characters
+  return full.length <= 550 ? full : full.slice(0, 547) + '...';
 }
 
 // ─── POST /proposals/:proposalId/space ───────────────────

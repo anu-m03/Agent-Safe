@@ -33,69 +33,49 @@ export function buildAppSkyboxPrompt(app: GeneratedApp, idea: Record<string, unk
   const title = typeof idea.title === 'string' ? idea.title : app.id;
 
   const elements: string[] = [
-    'A luminous digital incubation chamber floating above a neon Base blockchain network cityscape',
-    `Central holographic display showing the mini-app "${title.slice(0, 60)}" being assembled from glowing components`,
+    'Luminous digital incubation chamber above neon Base blockchain cityscape',
+    `Holographic display: mini-app "${title.slice(0, 40)}" assembled from glowing components`,
   ];
 
   // Map trend tags to visual zones
   if (tags.includes('defi') || tags.includes('swap')) {
-    elements.push(
-      'A DeFi Yield Zone on the left with golden liquidity streams, Uniswap swirl logos, and animated APR gauges',
-    );
+    elements.push('DeFi Yield Zone: golden liquidity streams, Uniswap swirl logos, APR gauges');
   }
   if (tags.includes('nft') || tags.includes('gaming')) {
-    elements.push(
-      'An NFT Forge Zone on the right with prismatic minting forges, pixel-art collectibles floating upward in beams of light',
-    );
+    elements.push('NFT Forge Zone: prismatic minting forges, pixel-art collectibles floating in beams');
   }
   if (tags.includes('social') || tags.includes('base-miniapp')) {
-    elements.push(
-      'A Social Discovery Hub at the back with Farcaster frames, user avatars orbiting a mini-app launch pad',
-    );
+    elements.push('Social Discovery Hub: Farcaster frames, user avatars orbiting a mini-app launchpad');
   }
   if (tags.includes('meme')) {
-    elements.push(
-      'A Meme Culture Quadrant bursting with vibrant color explosions, trending symbols, and viral waveforms',
-    );
+    elements.push('Meme Culture Quadrant: vibrant color explosions, trending symbols, viral waveforms');
   }
 
   // Map capabilities to spatial features
   if (caps.includes('uniswap_swap')) {
-    elements.push(
-      'Uniswap Universal Router represented as blue hyperspace tunnels feeding into the central app core',
-    );
+    elements.push('Uniswap Router: blue hyperspace tunnels feeding into the central app core');
   }
   if (caps.includes('simple_nft_mint')) {
-    elements.push(
-      'NFT mint circuit boards with glowing tokenId counters tracing upward arcs into the ceiling',
-    );
+    elements.push('NFT mint circuit boards with glowing tokenId counters arcing to the ceiling');
   }
   if (caps.includes('erc20_transfer')) {
-    elements.push(
-      'ERC-20 token transfer manifolds: cascading coin flows between wallets in neon green streams',
-    );
+    elements.push('ERC-20 manifolds: cascading coin flows between wallets in neon green streams');
   }
 
   // Lifecycle-aware colouring
   if (app.status === 'SUPPORTED' || app.status === 'HANDED_TO_USER') {
-    elements.push(
-      'The chamber glows green and gold — signalling a thriving, user-adopted application',
-    );
+    elements.push('Chamber glows green and gold — thriving user-adopted application');
   } else if (app.status === 'DROPPED') {
-    elements.push(
-      'A dim amber haze fills the chamber edges — graceful shutdown, lessons archived in the spatial log',
-    );
+    elements.push('Dim amber haze at chamber edges — graceful shutdown, lessons archived');
   } else {
-    elements.push(
-      'Pulsing cyan energy fields surround the incubation pod — the app is actively being evaluated',
-    );
+    elements.push('Pulsing cyan energy fields — app actively being evaluated');
   }
 
-  elements.push(
-    'Atmosphere: retrofuturistic on-chain ecosystem, high detail, cinematic depth, panoramic 360° equirectangular',
-  );
+  elements.push('Retrofuturistic on-chain ecosystem, cinematic depth, panoramic 360');
 
-  return elements.join('. ') + '.';
+  // Build prompt, hard-capped at 550 chars to stay safely under Blockade\'s 600-char limit
+  const full = elements.join('. ') + '.';
+  return full.length <= 550 ? full : full.slice(0, 547) + '...';
 }
 
 // ─── Gemini-powered spatial reasoning ────────────────────
