@@ -14,8 +14,9 @@ export interface InputTx {
 }
 
 /**
- * Action to take after SwarmGuard consensus.
- * Includes legacy swarm mapping and rules-engine-only types.
+ * Action to take after agent evaluation or consensus.
+ * Each value is an allowlisted, deterministic execution path.
+ * No generic "execute arbitrary calldata" types exist by design.
  */
 export type ActionType =
   | 'EXECUTE_TX'
@@ -28,7 +29,15 @@ export type ActionType =
   | 'QUEUE_GOVERNANCE_VOTE'
   | 'LIQUIDATION_REPAY'
   | 'LIQUIDATION_ADD_COLLATERAL'
-  | 'NO_ACTION';
+  | 'NO_ACTION'
+  // ─── Autonomous swap execution (allowlist-only) ─────────
+  // SWAP_REBALANCE: deterministic portfolio rebalance via Uniswap router.
+  // Restricted to:
+  //   - Allowlisted tokens only (hardcoded in callDataBuilder / agentExecute)
+  //   - Allowlisted router target only (Uniswap Universal Router)
+  //   - Session-key or backend-signer signed; NEVER arbitrary calldata
+  //   - Guardrailed by slippage cap, price-impact cap, and amount cap
+  | 'SWAP_REBALANCE';
 
 /**
  * Concrete intent produced by the SwarmGuard pipeline.
