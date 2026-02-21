@@ -1,138 +1,164 @@
 # AgentSafe
 
-> An ERC-4337 smart wallet on Base powered by **SwarmGuard** (multi-agent AI defense) and **GovernanceSafe** (proposal analysis + safe auto-voting with veto).
+AgentSafe is a hackathon-ready autonomous app creation platform on Base.
+
+Users connect a wallet, describe a goal, and run an AI agent cycle that:
+- scans trends,
+- generates a deployable mini-app idea,
+- runs safety and budget checks,
+- and manages incubation outcomes.
+
+This repo also includes a dedicated integrations proof surface for sponsor validation.
+
+## What We Built
+
+### 1) App Agent (Core Product)
+- Wallet-first flow with demo mode support
+- Intent-to-app autonomous pipeline
+- Safety pipeline + budget governor checks
+- Deploy/incubate lifecycle tracking
+- Cycle history and app performance monitoring
+
+Primary endpoints:
+- `POST /api/app-agent/init`
+- `POST /api/app-agent`
+- `POST /api/app-agent/run-cycle`
+- `GET /api/app-agent/budget`
+- `GET /api/app-agent/apps`
+- `GET /api/app-agent/:appId/status`
+
+### 2) Integrations Track (Hackathon Proof)
+- Base-native app + wallet support
+- QuickNode health + mode visibility
+- Kite AI integration checks
+- Governance feed ingestion (Nouns/Snapshot)
+- Blockade Labs spatial/atlas flows
+
+See the integrations page at `/integrations` for live/stub status display.
 
 ## Monorepo Structure
 
-```
+```text
 apps/
-  web/          → Next.js frontend dashboard
-  backend/      → Node.js + Express agent orchestrator API
+  web/          Next.js frontend
+  backend/      Express + TypeScript API
 packages/
-  contracts/    → Foundry Solidity smart contracts
-  shared/       → Shared TypeScript types, Zod schemas, constants
+  contracts/    Foundry Solidity contracts
+  shared/       Shared TS types/schemas/constants
 ```
 
-## Prerequisites
+## Project Structure
 
-- Node.js ≥ 20
-- pnpm ≥ 9
-- Foundry (for contracts)
+```text
+Agent-Safe/
+├── apps/
+│   ├── web/                 # Frontend app (UI, wagmi wallet flow, stats, integrations page)
+│   │   ├── src/app/         # Next.js App Router pages + API route
+│   │   ├── src/components/  # Reusable UI + feature components
+│   │   └── src/services/    # Backend client utilities
+│   └── backend/             # Express API + agent orchestration
+│       ├── src/routes/      # REST endpoints (/health, /api/app-agent, /api/governance, etc.)
+│       ├── src/appAgent/    # Trend scan, idea generation, safety, budget, incubator
+│       ├── src/services/    # Integrations (QuickNode, Gemini/Kite, Uniswap, etc.)
+│       └── src/state|stores/# Runtime/session/app state
+├── packages/
+│   ├── contracts/           # Solidity contracts + Foundry tests/deploy scripts
+│   └── shared/              # Shared types, Zod schemas, constants
+├── docs/                    # Architecture notes, audits, test guides
+└── scripts/                 # Workspace utilities (healthcheck, tooling scripts)
+```
+
+## Tech Stack
+
+- Frontend:
+  - Next.js 15 (App Router), React 19, TypeScript
+  - wagmi + viem (wallet + Base chain interactions)
+  - TanStack Query (data fetching/cache)
+  - Recharts (stats visualizations)
+  - Lucide React (icon system)
+- Backend:
+  - Node.js + Express + TypeScript
+  - tsx (dev runtime), Zod (validation/contracts)
+  - Service integrations: QuickNode, AI providers (Gemini/Kite), Uniswap APIs
+- Smart Contracts:
+  - Solidity + Foundry
+  - ERC-4337 account abstraction architecture
+- Monorepo/Tooling:
+  - pnpm workspaces + Turbo
+  - ESLint + Prettier
 
 ## Quick Start
 
+### Prerequisites
+- Node.js 20+
+- pnpm 9+
+- Foundry (contracts only)
+
+### Install
+
 ```bash
-# 1. Install dependencies
 pnpm install
-
-# 2. Copy environment variables
-cp .env.example .env
-# Fill in your keys
-
-# 3. Run everything in dev mode
-pnpm dev
-
-# Frontend → http://localhost:3000
-# Backend  → http://localhost:4000
 ```
+
+### Environment
+
+```bash
+cp .env.example .env
+# Fill required keys
+```
+
+### Run
+
+```bash
+pnpm dev
+```
+
+Services:
+- Web: `http://localhost:3000`
+- Backend: `http://localhost:4000`
+
+## Key Routes
+
+- `/` App Agent experience
+- `/integrations` Sponsor/integration proof dashboard
+- `/dashboard` System summary
+- `/defense` Transaction defense flow
+- `/governance` Proposal recommendation/veto flow
+- `/spatial-atlas` Blockade Labs spatial memory viewer
 
 ## Useful Commands
 
 ```bash
-pnpm build          # Build all packages (shared → contracts → web + backend)
-pnpm lint           # Lint all packages
-pnpm test           # Run tests across all packages
-pnpm healthcheck    # Validate backend API against Zod schemas (backend must be running)
-pnpm format         # Format all files with Prettier
+pnpm dev
+pnpm build
+pnpm lint
+pnpm test
+pnpm healthcheck
+```
 
-# Contracts (from packages/contracts)
+Contracts:
+
+```bash
+cd packages/contracts
 forge build
 forge test -vvv
 ```
 
-## Integration Health Check
+## Healthcheck
 
-Start the backend, then run:
+With backend running:
+
 ```bash
 pnpm healthcheck
 ```
 
-This validates all 6 API endpoints (`/health`, `/status`, `/api/swarm/evaluate-tx`,
-`/api/swarm/logs`, `/api/governance/proposals`, `/api/governance/recommend`) against
-canonical Zod schemas. Exit code 0 = all pass.
+## Hackathon Positioning
 
-## Architecture
+AgentSafe demonstrates two judge-friendly pillars:
+- Product: autonomous app creation + incubation loop (`app-agent`)
+- Platform: verifiable integration depth (`integrations`)
 
-- **AgentSafe Wallet** – ERC-4337 account abstraction wallet on Base
-- **SwarmGuard** – Multi-agent defense system (Sentinel, Scam Detector, Liquidation Predictor, Coordinator, Defender)
-- **GovernanceSafe** – Proposal parser, risk analysis, vote recommendation, execution with human veto
-- **Policy Engine** – On-chain deterministic guardrails that AI cannot override
-
-## Sponsor Integrations
-
-| Sponsor | What | Status |
-|---|---|---|
-| **Base (Coinbase)** | ERC-4337 smart wallet on Base (chain 8453) | ✅ Contracts + deploy script |
-| **QuickNode** | RPC for live block data, tx simulation | ✅ Live when `QUICKNODE_RPC_URL` set |
-| **Kite AI** | Proposal summarisation, scam NLP | ✅ Live when `KITE_API_KEY` set, stubs otherwise |
-| **Nouns / Snapshot** | Governance proposal ingestion + vote pipeline | ✅ Mock proposals + AI risk analysis |
-| **Blockade Labs** | Skybox AI 360° spatial environments for proposals | ✅ Live when `BLOCKADE_API_KEY` set, stubs otherwise |
-| **0g** | Decentralised storage for provenance receipts | 🟡 Stub / planned |
-
-See [docs/bounty-proof.md](docs/bounty-proof.md) for full sponsor evidence and
-[docs/demo-script.md](docs/demo-script.md) for the 5-7 minute judge walkthrough.
-
-## Frontend Pages
-
-| Route | Description |
-|---|---|
-| `/dashboard` | System overview — swarm status, proposals, integrations |
-| `/defense` | Evaluate transactions through SwarmGuard |
-| `/governance` | View proposals, get AI recommendations, veto |
-| `/spatial-atlas` | Navigate 360° spatial environments for proposals (Blockade Labs) |
-| `/policy` | Policy rules display + consensus simulator |
-| `/integrations` | Sponsor proof panel with live/stub badges |
-
-## Docs
-
-- [Demo Script](docs/demo-script.md) — Step-by-step for judges
-- [Bounty Proof](docs/bounty-proof.md) — Sponsor-by-sponsor evidence
-
-## Blockade Labs — Spatial Governance
-
-AgentSafe integrates with the **Blockade Labs Skybox AI** API to generate 360° spatial environments that visualise governance proposals as explorable spaces.
-
-### How It Works
-
-1. **Generate** — On any governance proposal, click "Generate Proposal Space". This builds a skybox prompt mapping proposal risk domains to spatial zones (Governance Chamber, Treasury Vault, Approval Terminal, Liquidation Corridor).
-2. **Spatial Reasoning** — After the skybox is generated, an LLM (Gemini) or keyword heuristic analyses the proposal and produces structured zone detections + multi-agent severity markers.
-3. **Spatial Memory** — Each generated space is persisted as a JSON file in `apps/backend/data/spatial-memory/{proposalId}.json`, including a keccak-equivalent scene hash for integrity.
-4. **Atlas Navigation** — The `/spatial-atlas` page lists all generated environments with thumbnails, recommendations, severity filters, and scene hashes. Click any card to expand details or open the 360° environment.
-5. **Multi-Agent Markers** — Each zone shows which agents (Sentinel, ScamDetector, LiquidationPredictor, Coordinator) are monitoring it and their severity assessment.
-
-### Setup
-
-```bash
-# Get your API key from https://api.blockadelabs.com
-# Add to .env
-BLOCKADE_API_KEY=your_key_here
-
-# Without the key, the system uses placeholder stubs for demo purposes.
-```
-
-### Spatial Memory Files
-
-Stored at: `apps/backend/data/spatial-memory/<proposalId>.json`
-
-Each file contains: `proposalId`, `sceneId`, `sceneHash`, `prompt`, `fileUrl`, `thumbUrl`, `agentMarkers[]`, `detectedZones[]`, `spatialSummary`, `voteRecommendation`, `confidence`, `status`.
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/governance/proposals/:id/space` | Generate a 360° spatial environment for a proposal |
-| GET | `/api/governance/proposals/:id/space` | Retrieve stored spatial memory |
-| GET | `/api/governance/spatial-atlas` | List all generated environments |
+This makes it easy to demo both end-user value and sponsor technical adoption in a single repo.
 
 ## License
 
