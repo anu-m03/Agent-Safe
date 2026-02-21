@@ -1,25 +1,23 @@
-# AgentSafe
+# VibeRate
 
-AgentSafe is a hackathon-ready autonomous app creation platform on Base.
+VibeRate is an autonomous app-creation platform on Base.
 
-Users connect a wallet, describe a goal, and run an AI agent cycle that:
-- scans trends,
-- generates a deployable mini-app idea,
-- runs safety and budget checks,
-- and manages incubation outcomes.
+Connect a wallet, describe the outcome you want, and run an AI cycle that generates an app concept, executes safety and budget checks, and tracks incubation results.
 
-This repo also includes a dedicated integrations proof surface for sponsor validation.
+## Current Product Functionality
 
-## What We Built
+### Core Flow
+1. Connect wallet (or use demo mode)
+2. Submit intent: "What is your desired outcome?"
+3. Run autonomous cycle:
+   - trend scan
+   - idea generation
+   - safety pipeline
+   - budget governor checks
+   - deploy/incubate decision
+4. Review outputs, cycle history, and app metrics
 
-### 1) App Agent (Core Product)
-- Wallet-first flow with demo mode support
-- Intent-to-app autonomous pipeline
-- Safety pipeline + budget governor checks
-- Deploy/incubate lifecycle tracking
-- Cycle history and app performance monitoring
-
-Primary endpoints:
+### Backend App-Agent APIs
 - `POST /api/app-agent/init`
 - `POST /api/app-agent`
 - `POST /api/app-agent/run-cycle`
@@ -27,138 +25,116 @@ Primary endpoints:
 - `GET /api/app-agent/apps`
 - `GET /api/app-agent/:appId/status`
 
-### 2) Integrations Track (Hackathon Proof)
-- Base-native app + wallet support
-- QuickNode health + mode visibility
-- Kite AI integration checks
-- Governance feed ingestion (Nouns/Snapshot)
-- Blockade Labs spatial/atlas flows
-
-See the integrations page at `/integrations` for live/stub status display.
-
-## Monorepo Structure
-
-```text
-apps/
-  web/          Next.js frontend
-  backend/      Express + TypeScript API
-packages/
-  contracts/    Foundry Solidity contracts
-  shared/       Shared TS types/schemas/constants
-```
+### Integrations Surface
+The project also includes an integrations/proof experience (route: `/integrations`) showing status for sponsor-facing services and supporting infrastructure.
 
 ## Project Structure
 
 ```text
-Agent-Safe/
+VibeRate/
 ├── apps/
-│   ├── web/                 # Frontend app (UI, wagmi wallet flow, stats, integrations page)
-│   │   ├── src/app/         # Next.js App Router pages + API route
-│   │   ├── src/components/  # Reusable UI + feature components
-│   │   └── src/services/    # Backend client utilities
-│   └── backend/             # Express API + agent orchestration
-│       ├── src/routes/      # REST endpoints (/health, /api/app-agent, /api/governance, etc.)
-│       ├── src/appAgent/    # Trend scan, idea generation, safety, budget, incubator
-│       ├── src/services/    # Integrations (QuickNode, Gemini/Kite, Uniswap, etc.)
-│       └── src/state|stores/# Runtime/session/app state
+│   ├── web/                      # Next.js frontend
+│   │   ├── src/app/              # App Router pages + API routes
+│   │   ├── src/components/       # UI + feature components
+│   │   ├── src/config/           # wagmi and app config
+│   │   ├── src/hooks/            # frontend hooks
+│   │   └── src/services/         # backend client layer
+│   └── backend/                  # Express API + orchestration runtime
+│       ├── src/routes/           # REST endpoints
+│       ├── src/appAgent/         # app-agent pipeline modules
+│       ├── src/services/         # external integrations + helpers
+│       ├── src/state/            # session/app state
+│       └── src/stores/           # persistence helpers
 ├── packages/
-│   ├── contracts/           # Solidity contracts + Foundry tests/deploy scripts
-│   └── shared/              # Shared types, Zod schemas, constants
-├── docs/                    # Architecture notes, audits, test guides
-└── scripts/                 # Workspace utilities (healthcheck, tooling scripts)
+│   ├── contracts/                # Solidity contracts (Foundry)
+│   └── shared/                   # shared TS types, schemas, constants
+├── docs/                         # architecture and testing docs
+├── scripts/                      # workspace scripts (healthcheck, etc.)
+├── turbo.json                    # monorepo task orchestration
+└── pnpm-workspace.yaml           # workspace package map
 ```
 
 ## Tech Stack
 
-- Frontend:
-  - Next.js 15 (App Router), React 19, TypeScript
-  - wagmi + viem (wallet + Base chain interactions)
-  - TanStack Query (data fetching/cache)
-  - Recharts (stats visualizations)
-  - Lucide React (icon system)
-- Backend:
-  - Node.js + Express + TypeScript
-  - tsx (dev runtime), Zod (validation/contracts)
-  - Service integrations: QuickNode, AI providers (Gemini/Kite), Uniswap APIs
-- Smart Contracts:
-  - Solidity + Foundry
-  - ERC-4337 account abstraction architecture
-- Monorepo/Tooling:
-  - pnpm workspaces + Turbo
-  - ESLint + Prettier
+### Frontend (`apps/web`)
+- Next.js 15 (App Router)
+- React 19 + TypeScript
+- wagmi + viem (wallet + chain interactions)
+- TanStack Query (query/cache)
+- Recharts (stats/charts)
+- Lucide React (icons)
+- Tailwind CSS + PostCSS
+
+### Backend (`apps/backend`)
+- Node.js + Express + TypeScript
+- tsx (dev runtime)
+- Zod (schema/validation)
+- dotenv (env loading)
+- Integrations used in codebase include QuickNode, AI providers (Anthropic/OpenAI/Google), and Uniswap SDK modules
+
+### Smart Contracts (`packages/contracts`)
+- Solidity
+- Foundry (build/test/deploy scripts)
+
+### Shared Library (`packages/shared`)
+- Shared types/constants/schemas used by frontend + backend
+
+## Tooling
+
+- Package manager: `pnpm` (workspace)
+- Monorepo orchestrator: `turbo`
+- Lint/format: ESLint + Prettier
+- Backend tests: Vitest
+- Frontend build: Next.js build pipeline
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 20+
 - pnpm 9+
-- Foundry (contracts only)
+- Foundry (only required for contract work)
 
-### Install
+### Install dependencies
 
 ```bash
 pnpm install
 ```
 
-### Environment
+### Configure env
 
 ```bash
 cp .env.example .env
-# Fill required keys
+# fill required values
 ```
 
-### Run
+### Run dev
 
 ```bash
 pnpm dev
 ```
 
-Services:
+Local services:
 - Web: `http://localhost:3000`
 - Backend: `http://localhost:4000`
 
-## Key Routes
-
-- `/` App Agent experience
-- `/integrations` Sponsor/integration proof dashboard
-- `/dashboard` System summary
-- `/defense` Transaction defense flow
-- `/governance` Proposal recommendation/veto flow
-- `/spatial-atlas` Blockade Labs spatial memory viewer
-
-## Useful Commands
+## Commands
 
 ```bash
 pnpm dev
 pnpm build
 pnpm lint
 pnpm test
+pnpm clean
 pnpm healthcheck
 ```
 
-Contracts:
+Contract commands:
 
 ```bash
 cd packages/contracts
 forge build
 forge test -vvv
 ```
-
-## Healthcheck
-
-With backend running:
-
-```bash
-pnpm healthcheck
-```
-
-## Hackathon Positioning
-
-AgentSafe demonstrates two judge-friendly pillars:
-- Product: autonomous app creation + incubation loop (`app-agent`)
-- Platform: verifiable integration depth (`integrations`)
-
-This makes it easy to demo both end-user value and sponsor technical adoption in a single repo.
 
 ## License
 
