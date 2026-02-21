@@ -1,13 +1,16 @@
 /**
- * Uniswap Trading API wrapper for Base Sepolia.
+ * Uniswap Trading API wrapper for Base.
  *
  * SAFETY:
+ * - Production default is Base mainnet (8453).
+ * - Testnet fallback is explicit-only: AGENT_TESTNET_MODE=true.
+ * - Chain override is explicit-only: UNISWAP_CHAIN_ID=8453|84532.
  * - Token addresses are hardcoded constants — never from LLM.
  * - Slippage default is deterministic (50 bps = 0.5%).
  * - This service ONLY fetches quotes; it never signs or submits.
  * - All amounts are in wei (string) to avoid floating-point loss.
- * - Calldata returned by Uniswap is passed through as-is for
- *   client-side signing only.
+ * - Calldata returned by Uniswap is passed through as-is.
+ * - No silent production stubs: quote failures are explicit by default.
  */
 
 import type { UniswapQuote, UniswapSwapTx } from '../agents/types.js';
@@ -15,20 +18,67 @@ import 'dotenv/config';
 // ─── Configuration ──────────────────────────────────────
 
 const UNISWAP_API_BASE =
-  process.env.UNISWAP_API_URL ?? 'https://trading-api-labs.interface.gateway.uniswap.org/v1';
+  process.env.UNISWAP_API_URL ?? 'https://trading-api.gateway.uniswap.org/v1';
 
 const DEFAULT_SLIPPAGE_BPS = 50; // 0.5%
 const QUOTE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const BASE_MAINNET_CHAIN_ID = 8453;
 const BASE_SEPOLIA_CHAIN_ID = 84532;
+type SupportedUniswapChainId = typeof BASE_MAINNET_CHAIN_ID | typeof BASE_SEPOLIA_CHAIN_ID;
 
-// ─── Well-known token addresses (Base Sepolia) ──────────
+// ─── Production / Testnet mode ─────────────────────────
+// Default is production (Base mainnet).
+// Overrides are explicit for controlled testing only.
+function resolveUniswapChainId(): SupportedUniswapChainId {
+  const override = process.env.UNISWAP_CHAIN_ID?.trim();
+  if (override) {
+    if (override === String(BASE_MAINNET_CHAIN_ID)) return BASE_MAINNET_CHAIN_ID;
+    if (override === String(BASE_SEPOLIA_CHAIN_ID)) return BASE_SEPOLIA_CHAIN_ID;
+    throw new Error(
+      `Invalid UNISWAP_CHAIN_ID="${override}". Allowed values: ${BASE_MAINNET_CHAIN_ID}, ${BASE_SEPOLIA_CHAIN_ID}`,
+    );
+  }
+
+  // Backward-compatible explicit switch for testnet.
+  if (process.env.AGENT_TESTNET_MODE === 'true') return BASE_SEPOLIA_CHAIN_ID;
+  return BASE_MAINNET_CHAIN_ID;
+}
+
+export const UNISWAP_CHAIN_ID: SupportedUniswapChainId = resolveUniswapChainId();
+
+// ─── Well-known token addresses ─────────────────────────
 // SAFETY: Hardcoded — never derived from LLM.
+//
+// Source of truth:
+// - WETH on Base (mainnet + sepolia): canonical predeploy 0x4200...0006.
+// - USDC on Base mainnet: Circle canonical token contract.
+// - USDC on Base Sepolia: canonical testnet token used for dev/test.
+// Update only via manual review.
 
-export const UNISWAP_TOKENS = {
+const BASE_MAINNET_TOKENS = {
+  ETH: '0x0000000000000000000000000000000000000000',
+  WETH: '0x4200000000000000000000000000000000000006',
+  USDC: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+} as const;
+
+const BASE_SEPOLIA_TOKENS = {
   ETH: '0x0000000000000000000000000000000000000000',
   WETH: '0x4200000000000000000000000000000000000006',
   USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 } as const;
+
+type UniswapTokenMap = {
+  readonly ETH: `0x${string}`;
+  readonly WETH: `0x${string}`;
+  readonly USDC: `0x${string}`;
+};
+
+const TOKENS_BY_CHAIN: Record<SupportedUniswapChainId, UniswapTokenMap> = {
+  [BASE_MAINNET_CHAIN_ID]: BASE_MAINNET_TOKENS,
+  [BASE_SEPOLIA_CHAIN_ID]: BASE_SEPOLIA_TOKENS,
+};
+
+export const UNISWAP_TOKENS = TOKENS_BY_CHAIN[UNISWAP_CHAIN_ID];
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -74,34 +124,34 @@ export async function getSwapQuote(
   slippageBps: number = DEFAULT_SLIPPAGE_BPS,
   swapper?: string,
 ): Promise<UniswapQuote> {
-    if (!swapper) {
+  if (!swapper) {
     throw new UniswapApiError('swapper is required');
-    }
+  }
 
-    const requestBody: UniswapApiQuoteRequest = {
-        tokenIn,
-        tokenOut,
-        amount: amountIn, // keep amount
-        type: 'EXACT_INPUT',
-        slippageTolerance: Number((slippageBps / 100).toFixed(2)),
-        chainId: BASE_SEPOLIA_CHAIN_ID,
-        tokenInChainId: BASE_SEPOLIA_CHAIN_ID,
-        tokenOutChainId: BASE_SEPOLIA_CHAIN_ID,
-        swapper,
-    };
+  const requestBody: UniswapApiQuoteRequest = {
+    tokenIn,
+    tokenOut,
+    amount: amountIn,
+    type: 'EXACT_INPUT',
+    slippageTolerance: Number((slippageBps / 100).toFixed(2)),
+    chainId: UNISWAP_CHAIN_ID,
+    tokenInChainId: UNISWAP_CHAIN_ID,
+    tokenOutChainId: UNISWAP_CHAIN_ID,
+    swapper,
+  };
 
   try {
     const apiKey = process.env.UNISWAP_API_KEY;
     if (!apiKey) throw new UniswapApiError('Missing UNISWAP_API_KEY');
 
     const res = await fetch(`${UNISWAP_API_BASE}/quote`, {
-    method: 'POST',
-    headers: {
+      method: 'POST',
+      headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey, // <-- add this
-    },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(10_000),
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {
@@ -164,13 +214,22 @@ export async function getSwapQuote(
       expiresAt: Date.now() + QUOTE_EXPIRY_MS,
     };
   } catch (err) {
-    if (err instanceof UniswapApiError) throw err;
-
-    // Return a stub quote for development / when API is unreachable
-    console.warn(
-      `[UniswapApi] Quote fetch failed, returning stub: ${err instanceof Error ? err.message : String(err)}`,
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[UniswapApi] Quote fetch failed (chainId=${UNISWAP_CHAIN_ID}, url=${UNISWAP_API_BASE}): ${message}`,
     );
-    return createStubQuote(tokenIn, tokenOut, amountIn, slippageBps);
+
+    // Explicit-only test override. Never enabled on production chainId 8453.
+    if (
+      UNISWAP_CHAIN_ID !== BASE_MAINNET_CHAIN_ID &&
+      process.env.UNISWAP_ALLOW_DEV_STUB_QUOTE === 'true'
+    ) {
+      console.warn('[UniswapApi] Using explicit dev stub quote override.');
+      return createStubQuote(tokenIn, tokenOut, amountIn, slippageBps);
+    }
+
+    if (err instanceof UniswapApiError) throw err;
+    throw new UniswapApiError(`Quote fetch failed: ${message}`);
   }
 }
 
@@ -252,81 +311,90 @@ export async function getSwapTx(
   swapper: string,
   recipient?: string,
 ): Promise<UniswapSwapTx> {
-  const apiKey = process.env.UNISWAP_API_KEY;
-  if (!apiKey) throw new UniswapApiError('Missing UNISWAP_API_KEY');
+  try {
+    const apiKey = process.env.UNISWAP_API_KEY;
+    if (!apiKey) throw new UniswapApiError('Missing UNISWAP_API_KEY');
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-  };
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+    };
 
-  // ── Step 1: Fetch quote ────────────────────────────────
-  const quoteBody = {
-    tokenIn,
-    tokenOut,
-    amount: amountIn,
-    type: 'EXACT_INPUT',
-    slippageTolerance: Number((slippageBps / 100).toFixed(2)),
-    chainId: BASE_SEPOLIA_CHAIN_ID,
-    tokenInChainId: BASE_SEPOLIA_CHAIN_ID,
-    tokenOutChainId: BASE_SEPOLIA_CHAIN_ID,
-    swapper,
-    ...(recipient ? { recipient } : {}),
-  };
+    // ── Step 1: Fetch quote ────────────────────────────────
+    const quoteBody = {
+      tokenIn,
+      tokenOut,
+      amount: amountIn,
+      type: 'EXACT_INPUT',
+      slippageTolerance: Number((slippageBps / 100).toFixed(2)),
+      chainId: UNISWAP_CHAIN_ID,
+      tokenInChainId: UNISWAP_CHAIN_ID,
+      tokenOutChainId: UNISWAP_CHAIN_ID,
+      swapper,
+      ...(recipient ? { recipient } : {}),
+    };
 
-  const quoteRes = await fetch(`${UNISWAP_API_BASE}/quote`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(quoteBody),
-    signal: AbortSignal.timeout(10_000),
-  });
+    const quoteRes = await fetch(`${UNISWAP_API_BASE}/quote`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(quoteBody),
+      signal: AbortSignal.timeout(10_000),
+    });
 
-  if (!quoteRes.ok) {
-    const body = await quoteRes.text().catch(() => '');
-    throw new UniswapApiError(
-      `Uniswap quote (for swap) returned HTTP ${quoteRes.status}: ${body.slice(0, 300)}`,
+    if (!quoteRes.ok) {
+      const body = await quoteRes.text().catch(() => '');
+      throw new UniswapApiError(
+        `Uniswap quote (for swap) returned HTTP ${quoteRes.status}: ${body.slice(0, 300)}`,
+      );
+    }
+
+    const quoteData = (await quoteRes.json()) as UniswapApiQuoteResponse;
+
+    if (!quoteData.quote) {
+      throw new UniswapApiError('Uniswap quote response missing "quote" object');
+    }
+
+    // ── Step 2: Pass quote to /swap ────────────────────────
+    const swapRes = await fetch(`${UNISWAP_API_BASE}/swap`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ quote: quoteData.quote }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!swapRes.ok) {
+      const body = await swapRes.text().catch(() => '');
+      throw new UniswapApiError(
+        `Uniswap swap API returned HTTP ${swapRes.status}: ${body.slice(0, 300)}`,
+      );
+    }
+
+    const swapData = (await swapRes.json()) as UniswapApiSwapResponse;
+    const swap = swapData.swap;
+
+    if (!swap?.to || !swap?.data) {
+      throw new UniswapApiError(
+        'Uniswap swap API response missing required fields (to, data)',
+      );
+    }
+
+    return {
+      to: swap.to,
+      data: swap.data,
+      value: swap.value ?? '0x0',
+      chainId: UNISWAP_CHAIN_ID,
+      ...(swap.gasLimit ? { gasLimit: swap.gasLimit } : {}),
+      ...(swap.maxFeePerGas ? { maxFeePerGas: swap.maxFeePerGas } : {}),
+      ...(swap.maxPriorityFeePerGas ? { maxPriorityFeePerGas: swap.maxPriorityFeePerGas } : {}),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[UniswapApi] Swap tx fetch failed (chainId=${UNISWAP_CHAIN_ID}, url=${UNISWAP_API_BASE}): ${message}`,
     );
+    if (err instanceof UniswapApiError) throw err;
+    throw new UniswapApiError(`Swap tx fetch failed: ${message}`);
   }
-
-  const quoteData = (await quoteRes.json()) as UniswapApiQuoteResponse;
-
-  if (!quoteData.quote) {
-    throw new UniswapApiError('Uniswap quote response missing "quote" object');
-  }
-
-  // ── Step 2: Pass quote to /swap ────────────────────────
-  const swapRes = await fetch(`${UNISWAP_API_BASE}/swap`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ quote: quoteData.quote }),
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!swapRes.ok) {
-    const body = await swapRes.text().catch(() => '');
-    throw new UniswapApiError(
-      `Uniswap swap API returned HTTP ${swapRes.status}: ${body.slice(0, 300)}`,
-    );
-  }
-
-  const swapData = (await swapRes.json()) as UniswapApiSwapResponse;
-  const swap = swapData.swap;
-
-  if (!swap?.to || !swap?.data) {
-    throw new UniswapApiError(
-      'Uniswap swap API response missing required fields (to, data)',
-    );
-  }
-
-  return {
-    to: swap.to,
-    data: swap.data,
-    value: swap.value ?? '0x0',
-    chainId: BASE_SEPOLIA_CHAIN_ID,
-    ...(swap.gasLimit ? { gasLimit: swap.gasLimit } : {}),
-    ...(swap.maxFeePerGas ? { maxFeePerGas: swap.maxFeePerGas } : {}),
-    ...(swap.maxPriorityFeePerGas ? { maxPriorityFeePerGas: swap.maxPriorityFeePerGas } : {}),
-  };
 }
 
 // ─── Errors ─────────────────────────────────────────────
