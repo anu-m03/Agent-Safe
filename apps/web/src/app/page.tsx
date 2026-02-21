@@ -121,30 +121,6 @@ type RunResponse = {
   pipelineLogs?: string[];
 };
 
-type PipelineResponse = {
-  success?: boolean;
-  verdict?: 'PASS' | 'BLOCK' | string;
-  idea?: {
-    title?: string;
-    description?: string;
-    templateId?: string;
-    capabilities?: string[];
-  };
-  safety?: {
-    verdict?: 'PASS' | 'BLOCK' | string;
-    riskScore?: number;
-    reason?: string;
-  };
-  deployAllowed?: boolean;
-  error?: string;
-  generatedDapp?: {
-    frontendLength?: number;
-    smartContractLength?: number;
-    structureNote?: string;
-    name?: string;
-  };
-};
-
 type CycleEntry = {
   id: string;
   timestamp: string;
@@ -567,8 +543,8 @@ function AppShellInternal() {
   const [wordmarkTrigger, setWordmarkTrigger] = useState(1);
   const [outcomeFlash, setOutcomeFlash] = useState<'pass' | 'block' | null>(null);
 
-  const [pipelineResult, setPipelineResult] = useState<PipelineResponse | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
+  const [memeDeployResult, setMemeDeployResult] = useState<{ txHash: string; tokenAddress: string | null; blockNumber: number } | null>(null);
 
   const INDUSTRY_OPTIONS = ['DeFi', 'NFT', 'Gaming', 'Social', 'DAO / Governance', 'Infrastructure', 'RWA', 'Payments', 'Identity', 'Analytics'];
   const [interestedIndustries, setInterestedIndustries] = useState<string[]>(() => {
@@ -738,7 +714,6 @@ function AppShellInternal() {
     setOutputVisible(false);
     setPipelineVisible(false);
     setRunResult(null);
-    setPipelineResult(null);
   };
 
   const onTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -753,30 +728,17 @@ function AppShellInternal() {
 
   const runMutation = useMutation({
     mutationFn: async (intent: string) => {
-      const [pipeline, runCycle] = await Promise.all([
-        fetch('/api/app-agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userIntent: intent }),
-        }).then(async (res) => {
-          const json = await res.json();
-          if (!res.ok) throw new Error(json?.error || `${res.status}`);
-          return json as PipelineResponse;
-        }),
-        api<RunResponse>('/api/app-agent/run-cycle', {
-          method: 'POST',
-          body: JSON.stringify({ walletAddress, intent }),
-        }),
-      ]);
-      return { pipeline, runCycle };
+      return api<RunResponse>('/api/app-agent/run-cycle', {
+        method: 'POST',
+        body: JSON.stringify({ walletAddress, intent }),
+      });
     },
     onError: (err: Error) => {
-      addToast(`/api/app-agent failed: ${err.message}`, 'block', 5000);
+      addToast(`Run cycle failed: ${err.message}`, 'block', 5000);
       setIsRunning(false);
       if (runInterval.current) window.clearInterval(runInterval.current);
     },
-    onSuccess: ({ pipeline, runCycle }) => {
-      setPipelineResult(pipeline);
+    onSuccess: (runCycle) => {
       setRunResult(runCycle);
 
       const status = runCycle.status;
@@ -794,6 +756,13 @@ function AppShellInternal() {
         finalVerdict = 'REJECTED';
       }
 
+      // Derive safety info from backend pipeline logs
+      const safetyLog = (runCycle.pipelineLogs as Array<{ step?: string; ok?: boolean; reason?: string }> || []).find(
+        (l) => l.step === 'runAppSafetyPipeline',
+      );
+      const safetyPassed = safetyLog ? safetyLog.ok : finalVerdict === 'DEPLOYED';
+      const safetyReason = safetyLog?.reason;
+
       setPipelineStates(nextStates);
       setPipelineStage(5);
       setVerdict(finalVerdict);
@@ -803,7 +772,6 @@ function AppShellInternal() {
       setOutcomeFlash(finalVerdict === 'DEPLOYED' ? 'pass' : 'block');
       window.setTimeout(() => setOutcomeFlash(null), 700);
 
-      const safetyRisk = pipeline?.safety?.riskScore || 0;
       const budgetBefore = budgetQuery.data?.treasuryUsd || 0;
       const budgetAfter = runCycle.budgetRemaining || budgetBefore;
       const budgetUsed = Math.max(0, budgetBefore - budgetAfter);
@@ -814,12 +782,12 @@ function AppShellInternal() {
         timestamp: new Date().toLocaleTimeString(),
         intent: visionText,
         status: finalVerdict,
-        risk: safetyRisk,
+        risk: safetyPassed ? 0 : 75,
         budgetUsed,
-        title: runCycle.idea?.title || pipeline.idea?.title || 'Untitled app',
-        reason: pipeline.safety?.reason,
+        title: runCycle.idea?.title || 'Untitled app',
+        reason: safetyReason,
         logs: runCycle.pipelineLogs || [],
-        description: pipeline.idea?.description || runCycle.idea?.description,
+        description: runCycle.idea?.description,
       };
       setCycleLog((prev) => [entry, ...prev]);
 
@@ -828,13 +796,36 @@ function AppShellInternal() {
         runInterval.current = null;
       }
 
-      if (pipeline.safety?.verdict === 'PASS') addToast(`Safety passed - risk ${safetyRisk}/100`, 'pass');
-      if (pipeline.safety?.verdict === 'BLOCK') addToast(`Safety blocked - ${pipeline.safety?.reason || 'unknown reason'}`, 'block', 5000);
+      if (safetyPassed) addToast('Safety passed', 'pass');
+      else addToast(`Safety blocked - ${safetyReason || 'unknown reason'}`, 'block', 5000);
       if (finalVerdict === 'DEPLOYED') addToast('App deployed - incubating', 'pass', 5000);
-      if (finalVerdict !== 'DEPLOYED') addToast(`Cycle blocked - ${pipeline.safety?.reason || finalVerdict}`, 'block', 5000);
+      if (finalVerdict !== 'DEPLOYED') addToast(`Cycle blocked - ${safetyReason || finalVerdict}`, 'block', 5000);
 
       qc.invalidateQueries({ queryKey: ['budget', walletAddress] });
       qc.invalidateQueries({ queryKey: ['apps', walletAddress] });
+    },
+  });
+
+  const memeDemoMutation = useMutation({
+    mutationFn: async () =>
+      api<{ ok: boolean; message?: string; app?: AppRow; txHash?: string; tokenAddress?: string | null; blockNumber?: number }>('/api/app-agent/demo-meme-deploy', {
+        method: 'POST',
+        body: JSON.stringify({ walletAddress }),
+      }),
+    onSuccess: (payload) => {
+      addToast(payload.message || 'Meme token deployed on-chain!', 'pass', 5000);
+      if (payload.txHash) {
+        setMemeDeployResult({
+          txHash: payload.txHash,
+          tokenAddress: payload.tokenAddress ?? null,
+          blockNumber: payload.blockNumber ?? 0,
+        });
+      }
+      qc.invalidateQueries({ queryKey: ['apps', walletAddress] });
+      qc.invalidateQueries({ queryKey: ['appEvolutionAtlas'] });
+    },
+    onError: (err: Error) => {
+      addToast(`Demo deploy failed: ${err.message}`, 'block', 4500);
     },
   });
 
@@ -878,11 +869,8 @@ function AppShellInternal() {
   const stageIcons = [Rss, Lightbulb, ScanLine, Gauge, Rocket];
   const stageNames = ['TRENDS', 'IDEA', 'SAFETY', 'BUDGET', 'DEPLOY'];
 
-  const outputIdea = runResult?.idea || pipelineResult?.idea;
-  const codeString =
-    pipelineResult?.generatedDapp?.structureNote
-      ? `// ${pipelineResult.generatedDapp.name || 'generated-app'}\n${pipelineResult.generatedDapp.structureNote}\n// frontend length: ${pipelineResult.generatedDapp.frontendLength || 0}\n// contract length: ${pipelineResult.generatedDapp.smartContractLength || 0}`
-      : '';
+  const outputIdea = runResult?.idea;
+  const codeString = '';
 
   const budget = budgetQuery.data || {};
   const perCap = budget.perAppCapUsd || 1;
@@ -1054,6 +1042,7 @@ function AppShellInternal() {
   const healthState = healthQuery.data?.status === 'ok' ? 'ok' : healthQuery.data?.status === 'degraded' ? 'degraded' : 'offline';
 
   const runDisabled = !visionText.trim() || isRunning || (!isConnected && !demoMode);
+  const memeDeployDisabled = isRunning || memeDemoMutation.isPending || (!isConnected && !demoMode);
 
   return (
     <div className={classNames('app-root', outcomeFlash && `outcome-flash outcome-flash-${outcomeFlash}`)}>
@@ -1267,7 +1256,7 @@ function AppShellInternal() {
 
           <footer className="landing-bottom">
             <div className="subtle-line"><span className="base-box" />Built on Base</div>
-            <div className="subtle-line">Powered by Claude + Uniswap</div>
+            <div className="subtle-line">Powered by Gemini + Uniswap</div>
           </footer>
         </>
       ) : (
@@ -1309,12 +1298,14 @@ function AppShellInternal() {
                 </div>
               </div>
 
-              <button className="run-btn magnet" disabled={runDisabled} onClick={startRun}>
-                {isRunning ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Rocket size={18} strokeWidth={1.5} />}
-                <span>{isRunning ? 'Running pipeline...' : 'Run build cycle'}</span>
-                {sparks.map((spark) => (
-                  <SparkBurst key={spark.id} x={spark.x} y={spark.y} tone={spark.tone} />
-                ))}
+              <button
+                className="run-btn magnet"
+                disabled={memeDeployDisabled}
+                onClick={() => memeDemoMutation.mutate()}
+                style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--pass) 45%, transparent), color-mix(in srgb, var(--pass) 20%, transparent))' }}
+              >
+                {memeDemoMutation.isPending ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Rocket size={18} strokeWidth={1.5} />}
+                <span>{memeDemoMutation.isPending ? 'Deploying...' : 'Deploy'}</span>
               </button>
 
               {!outputVisible && !pipelineVisible ? (
@@ -1327,6 +1318,75 @@ function AppShellInternal() {
               </div>{/* end input-col */}
 
               <div className="live-col">
+
+              {memeDeployResult ? (
+                <div
+                  className="panel panel-show"
+                  style={{
+                    padding: '18px 20px',
+                    marginBottom: 16,
+                    background: 'color-mix(in srgb, var(--pass) 6%, var(--surface))',
+                    border: '1px solid color-mix(in srgb, var(--pass) 25%, transparent)',
+                    borderRadius: 14,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckCircle2 size={16} strokeWidth={1.5} style={{ color: 'var(--pass)' }} />
+                    <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>Transaction Confirmed</span>
+                  </div>
+
+                  <div style={{ fontSize: 12, color: 'var(--text-subtle)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <span style={{ fontWeight: 500, minWidth: 70 }}>Tx Hash</span>
+                      <a
+                        href={`https://sepolia.basescan.org/tx/${memeDeployResult.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--accent)', textDecoration: 'underline', fontFamily: 'var(--font-mono, monospace)', fontSize: 11, wordBreak: 'break-all' }}
+                      >
+                        {memeDeployResult.txHash}
+                      </a>
+                    </div>
+
+                    {memeDeployResult.tokenAddress ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <span style={{ fontWeight: 500, minWidth: 70 }}>Token</span>
+                        <a
+                          href={`https://sepolia.basescan.org/token/${memeDeployResult.tokenAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--accent)', textDecoration: 'underline', fontFamily: 'var(--font-mono, monospace)', fontSize: 11, wordBreak: 'break-all' }}
+                        >
+                          {memeDeployResult.tokenAddress}
+                        </a>
+                      </div>
+                    ) : null}
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <span style={{ fontWeight: 500, minWidth: 70 }}>Block</span>
+                      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>{memeDeployResult.blockNumber}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <span style={{ fontWeight: 500, minWidth: 70 }}>Chain</span>
+                      <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>Base Sepolia (84532)</span>
+                    </div>
+                  </div>
+
+                  <a
+                    href={`https://sepolia.basescan.org/tx/${memeDeployResult.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ghost-btn"
+                    style={{ fontSize: 11, padding: '5px 14px', textDecoration: 'none', alignSelf: 'flex-start', marginTop: 2 }}
+                  >
+                    View on BaseScan
+                  </a>
+                </div>
+              ) : null}
               <section className={classNames('panel pipeline-panel', pipelineVisible && 'panel-show')}>
                 <div className="panel-head">
                   <span>PIPELINE</span>
@@ -1388,22 +1448,22 @@ function AppShellInternal() {
                     </div>
                   </article>
 
-                  <article className={classNames('output-card glare', pipelineResult?.safety?.verdict === 'PASS' ? 'card-pass' : 'card-block')} role="region" aria-label="Safety check result">
+                  <article className={classNames('output-card glare', verdict === 'DEPLOYED' ? 'card-pass' : 'card-block')} role="region" aria-label="Safety check result">
                     <header><ScanLine size={14} strokeWidth={1.5} />SAFETY CHECK</header>
-                    {(pipelineResult?.safety?.verdict || 'BLOCK') === 'PASS' ? (
+                    {verdict === 'DEPLOYED' ? (
                       <>
                         <div className="safety-pass"><ShieldCheck size={16} strokeWidth={1.5} />PASS</div>
-                        <div className="mono-line">Risk Score: {Math.round(pipelineResult?.safety?.riskScore || 0)}</div>
+                        <div className="mono-line">Risk Score: 0</div>
                         <div className="check-lines">
                           {(runResult?.pipelineLogs || ['Capability allowlist verified', 'Static policy checks complete', 'Budget envelope validated', 'Simulation passed', 'No governance dependency']).slice(0, 5).map((line) => (
-                            <div key={line}><CheckCircle2 size={14} strokeWidth={1.5} /><span>{line}</span></div>
+                            <div key={typeof line === 'string' ? line : JSON.stringify(line)}><CheckCircle2 size={14} strokeWidth={1.5} /><span>{typeof line === 'string' ? line : (line as Record<string, unknown>).step as string}</span></div>
                           ))}
                         </div>
                       </>
                     ) : (
                       <>
                         <div className="safety-block"><ShieldAlert size={16} strokeWidth={1.5} />BLOCKED</div>
-                        <p>{pipelineResult?.safety?.reason || pipelineResult?.error || 'Safety policy blocked this cycle.'}</p>
+                        <p>{cycleLog[0]?.reason || 'Safety policy blocked this cycle.'}</p>
                       </>
                     )}
                   </article>
@@ -1438,7 +1498,7 @@ function AppShellInternal() {
                         <span className="code-dot code-dot-y" />
                         <span className="code-dot code-dot-g" />
                         <span style={{ flex: 1, marginLeft: 8, fontSize: 11, color: 'var(--text-subtle)' }}>
-                          {pipelineResult?.generatedDapp?.name || 'generated-app'}
+                          {runResult?.idea?.title || 'generated-app'}
                         </span>
                         <span className="code-lang-badge">JSX</span>
                         <button className="icon-ghost" style={{ width: 28, height: 28, marginLeft: 6 }} onClick={onCopyCode} aria-label="Copy code to clipboard">
@@ -1480,66 +1540,6 @@ function AppShellInternal() {
                 )}
               </section>
 
-              {appsQuery.data?.apps?.length ? (
-                <section className="cycle-section">
-                  <h3>INCUBATING APPS</h3>
-                  <div className={classNames('apps-grid', appsQuery.data.apps.length > 4 && 'apps-grid-list')}>
-                    {appsQuery.data.apps.map((app, idx) => {
-                      const users = app.metrics?.users || 0;
-                      const revenue = app.metrics?.revenueUsd || app.metrics?.revenue || 0;
-                      const impressions = app.metrics?.impressions || 0;
-                      const day = app.deployedAt ? Math.max(1, Math.floor((Date.now() - new Date(app.deployedAt).getTime()) / (1000 * 60 * 60 * 24))) : idx + 1;
-                      const status = app.status || 'INCUBATING';
-                      const title = app.idea?.title || app.title || 'Untitled App';
-                      const monogram = title.split(' ').slice(0, 2).map((w: string) => w[0] || '').join('').toUpperCase() || 'AA';
-                      const statusClass = status.includes('INCUBATING') ? 'status-incubating' : status.includes('HANDED') ? 'status-deployed' : 'status-dropped';
-
-                      return (
-                        <article key={app.id || `${idx}`} className={classNames('app-card tilt', statusClass)}>
-                          <div className="app-head">
-                            <div className="app-monogram">{monogram}</div>
-                            <div className="app-head-text">
-                              <h4>{title}</h4>
-                              <div className="app-status-row">
-                                {status.includes('INCUBATING') ? <span className="live-dot" /> : null}
-                                <span className="template-badge">{status}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <p className="mono-time">Day {day} of 14</p>
-
-                          {status.includes('INCUBATING') ? (
-                            <div className="metric-stack">
-                              <div>
-                                <div className="metric-label">{users} / 50 users</div>
-                                <div className="metric-track"><div className="metric-fill" style={{ '--target': `${Math.min(100, (users / 50) * 100)}%` } as React.CSSProperties} /></div>
-                              </div>
-                              <div>
-                                <div className="metric-label">${revenue} / $10</div>
-                                <div className="metric-track"><div className="metric-fill warning" style={{ '--target': `${Math.min(100, (revenue / 10) * 100)}%` } as React.CSSProperties} /></div>
-                              </div>
-                              <div>
-                                <div className="metric-label">{impressions} / 500 impressions</div>
-                                <div className="metric-track"><div className="metric-fill block" style={{ '--target': `${Math.min(100, (impressions / 500) * 100)}%` } as React.CSSProperties} /></div>
-                              </div>
-                            </div>
-                          ) : status.includes('HANDED') ? (
-                            <div className="handoff"><HandCoins size={16} strokeWidth={1.5} />Handed back</div>
-                          ) : (
-                            <div className="drop"><XCircle size={16} strokeWidth={1.5} />De-supported</div>
-                          )}
-                        </article>
-                      );
-                    })}
-                  </div>
-                </section>
-              ) : (
-                <div className="empty-slot">
-                  <div className="empty-icon"><Rocket size={32} strokeWidth={1} /></div>
-                  <p className="empty-title">No apps yet</p>
-                  <p className="empty-hint">When a cycle is deployed, the app appears here with live incubation metrics.</p>
-                </div>
-              )}
               </div>
             </section>
           ) : null}
