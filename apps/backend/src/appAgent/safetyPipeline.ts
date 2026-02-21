@@ -2,6 +2,10 @@
  * App Generation Safety Pipeline — All checks must pass before any deploy.
  * Template-constrained, allowlisted capabilities, novelty check, budget gate, simulation.
  * Base-native: simulation is cheap on Base; fail closed for production-minded behavior.
+ *
+ * FAIL CLOSED: Every check returns { passed: false } (BLOCK) on failure; deploy must not proceed.
+ * Allowlisted tokens/contracts: template + capabilities here; any future idea.targetContracts must
+ * be validated with shared/schemas/validators (zAddress) and config allowedTokens/allowedTargets.
  */
 
 import type { AppIdea, SafetyCheckResult } from './types.js';

@@ -236,6 +236,7 @@ interface UniswapApiSwapResponse {
  * - Returns an unsigned tx payload only — backend never signs.
  * - Only allowlisted tokens are accepted (enforced by caller).
  * - Calldata is pass-through from Uniswap; we do not construct it.
+ * - Deadline sanity: if swap calldata is ever built here, use validateDeadline from services/execution/guardrails.
  *
  * @param tokenIn     Input token address (from UNISWAP_TOKENS)
  * @param tokenOut    Output token address (from UNISWAP_TOKENS)

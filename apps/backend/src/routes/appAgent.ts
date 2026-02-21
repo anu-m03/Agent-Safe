@@ -1,6 +1,18 @@
 /**
  * App Agent API — Init, run-cycle, generate, validate, deploy, status.
  * Base-native: low-fee monitoring, session-key automation, Base mini-app ecosystem, ERC-8021 attribution (stub).
+ *
+ * GUARDRAILS (before any deploy / execution — each throws or returns BLOCK on failure):
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * | Guardrail                    | Where enforced
+ * | Allowlisted tokens/contracts | appAgent/safetyPipeline (template + capabilities);
+ * |                              | execution: callDataBuilder isTokenAllowed, config allowedTokens/allowedTargets
+ * | Max budget per app           | appAgent/budgetGovernor (canAllocate/recordSpend); safetyPipeline + deployer
+ * | Max slippage                 | routes/agentExecute (session.limits.maxSlippageBps); execution path only
+ * | ChainId validation           | executionService.executeIntent, callDataBuilder (validateChainId)
+ * | Deadline sanity              | services/execution/guardrails.validateDeadline (swap calldata builders)
+ * | User balance check           | routes/agentExecute (balance cap, zero-balance BLOCK); portfolio/execution
+ * ─────────────────────────────────────────────────────────────────────────────────
  */
 
 import { Router } from 'express';
@@ -12,6 +24,7 @@ import { getBudgetState, estimateRunway } from '../appAgent/budgetGovernor.js';
 import { saveApp, getApp, listApps } from '../appAgent/appAgentStore.js';
 import { evaluateAppPerformance } from '../appAgent/incubator.js';
 import { executeRunCycle } from '../appAgent/runCycle.js';
+import { verifyYieldEngineProtection } from '../appAgent/yieldEngineProtection.js';
 import {
   createSession,
   getSessionByWallet,
@@ -146,6 +159,46 @@ appAgentRouter.post('/deploy', async (req, res) => {
   } catch (err) {
     console.error('[app-agent] deploy:', err);
     res.status(500).json({ error: 'Deploy failed' });
+  }
+});
+
+// ─── POST /api/app-agent/verify-budget (yield engine protection) ───────
+// Receives LLM deployment proposal; returns structured JSON with checks and finalDecision (deploy true/false).
+appAgentRouter.post('/verify-budget', (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const appName = typeof body.appName === 'string' ? body.appName : '';
+    const requestedBudget = typeof body.requestedBudget === 'number' ? body.requestedBudget : Number(body.requestedBudget);
+    const userBalance = typeof body.userBalance === 'number' ? body.userBalance : Number(body.userBalance);
+    const token = typeof body.token === 'string' ? body.token : '';
+    const slippage = typeof body.slippage === 'number' ? body.slippage : Number(body.slippage);
+    const chainId = typeof body.chainId === 'number' ? body.chainId : Number(body.chainId);
+    const currentDailyBurn = typeof body.currentDailyBurn === 'number' ? body.currentDailyBurn : undefined;
+
+    if (Number.isNaN(requestedBudget)) {
+      return res.status(400).json({ error: 'requestedBudget must be a number' });
+    }
+
+    const result = verifyYieldEngineProtection({
+      appName,
+      requestedBudget,
+      userBalance: Number.isNaN(userBalance) ? 0 : userBalance,
+      token,
+      slippage: Number.isNaN(slippage) ? 0 : slippage,
+      chainId: Number.isNaN(chainId) ? 0 : chainId,
+      currentDailyBurn,
+    });
+
+    return res.json({
+      appName: result.appName,
+      requestedBudget: result.requestedBudget,
+      checks: result.checks,
+      finalDecision: result.finalDecision,
+      blockReasons: result.blockReasons.length ? result.blockReasons : undefined,
+    });
+  } catch (err) {
+    console.error('[app-agent] verify-budget:', err);
+    res.status(500).json({ error: 'Verify-budget failed' });
   }
 });
 

@@ -5,6 +5,7 @@
 
 import { scanTrends } from './trendScanner.js';
 import { generateIdea } from './ideaGenerator.js';
+import { runAppSafetyPipeline } from './safetyPipeline.js';
 import type { AppIdea } from './types.js';
 import {
   BUDGET_CONSTANTS,
@@ -158,6 +159,26 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       pipelineLogs,
       baseNative,
       evolutionContext,
+    };
+  }
+
+  // Full safety pipeline (template, capabilities, novelty, budget gate, simulation).
+  // Must pass before any deploy; returns BLOCK (REJECTED) on any failure.
+  const safety = await runAppSafetyPipeline(idea);
+  pipelineLogs.push({
+    step: 'runAppSafetyPipeline',
+    ok: safety.passed,
+    reason: safety.passed ? undefined : safety.reason,
+    failedCheck: safety.failedCheck,
+  });
+  if (!safety.passed) {
+    return {
+      appId: idea.id,
+      status: 'REJECTED',
+      idea,
+      budgetRemaining: getBudgetRemaining(),
+      pipelineLogs,
+      baseNative,
     };
   }
 

@@ -315,7 +315,6 @@ export function getSpatialAtlas() {
   return request<SpatialAtlasResponse>('/api/governance/spatial-atlas');
 }
 
-<<<<<<< HEAD
 // ─── App Agent (generate, validate, deploy, status, budget) ─
 
 export interface AppIdea {
