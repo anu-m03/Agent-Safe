@@ -19,6 +19,7 @@ import { streamsIngestRouter } from './routes/streamsIngest.js';
 import { uniswapRouter } from './routes/uniswap.js';
 import { requestLogger } from './middleware/logger.js';
 import { readAllLogs } from './storage/logStore.js';
+import { startAutonomyLoop } from './services/autonomy/autonomyLoop.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -83,6 +84,25 @@ app.listen(PORT, () => {
   console.log(`🛡️  AgentSafe backend running on http://localhost:${PORT}`);
   console.log(`   Health:  http://localhost:${PORT}/health`);
   console.log(`   Status:  http://localhost:${PORT}/status`);
+
+  // Default is safe-off. Loop starts only when AUTONOMY_ENABLED=true.
+  const autonomyEnabled = process.env.AUTONOMY_ENABLED === 'true';
+  console.log(
+    `[autonomy] startup mode: ${autonomyEnabled ? 'ENABLED' : 'DISABLED'} (AUTONOMY_ENABLED=${process.env.AUTONOMY_ENABLED ?? 'unset'})`,
+  );
+  try {
+    const handle = startAutonomyLoop({ port: Number(PORT) });
+    if (autonomyEnabled && !handle) {
+      console.error(
+        '[autonomy] requested enabled mode but loop did not initialize; check AUTONOMY_* env configuration.',
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[autonomy] failed to initialize loop; API will continue running. error=${message}`,
+    );
+  }
 });
 
 export default app;
