@@ -478,6 +478,16 @@ function AppShellInternal() {
   const [pipelineResult, setPipelineResult] = useState<PipelineResponse | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
 
+  const INDUSTRY_OPTIONS = ['DeFi', 'NFT', 'Gaming', 'Social', 'DAO / Governance', 'Infrastructure', 'RWA', 'Payments', 'Identity', 'Analytics'];
+  const [interestedIndustries, setInterestedIndustries] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const s = window.localStorage.getItem('agentsafe-interested-industries');
+      if (s) return JSON.parse(s) as string[];
+    } catch {}
+    return [];
+  });
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const runInterval = useRef<number | null>(null);
@@ -533,6 +543,18 @@ function AppShellInternal() {
     document.documentElement.setAttribute('data-theme', theme);
     window.localStorage.setItem('agentsafe-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('agentsafe-interested-industries', JSON.stringify(interestedIndustries));
+    } catch {}
+  }, [interestedIndustries]);
+
+  const toggleIndustry = (industry: string) => {
+    setInterestedIndustries((prev) =>
+      prev.includes(industry) ? prev.filter((i) => i !== industry) : [...prev, industry],
+    );
+  };
 
   useEffect(() => {
     if (isConnected && address) {
@@ -595,11 +617,6 @@ function AppShellInternal() {
     setPipelineVisible(false);
     setRunResult(null);
     setPipelineResult(null);
-  };
-
-  const insertCategory = (cat: string) => {
-    setVisionText((prev) => (prev.trim() ? `${prev}\n${cat}: ` : `${cat}: `));
-    textareaRef.current?.focus();
   };
 
   const onTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -1013,7 +1030,7 @@ function AppShellInternal() {
           {activeTab === 'agent' ? (
             <section className="agent-col">
               <div className="center-head">
-                <h2 className={classNames('vision-title', focusVision && 'vision-title-blur')}>What is your desired outcome?</h2>
+                <h2 className={classNames('vision-title', focusVision && 'vision-title-blur')}>What outcome do you want to see?</h2>
                 <p>Describe the app you want to exist in the world.</p>
               </div>
 
@@ -1031,17 +1048,8 @@ function AppShellInternal() {
                   onChange={onTextareaInput}
                   onFocus={() => setFocusVision(true)}
                   onBlur={() => setFocusVision(false)}
-                  placeholder="e.g. A DeFi yield aggregator tracking APY across Aave, Compound, and Uniswap on Base with real-time alerts..."
+                  placeholder="xyz"
                 />
-
-                <div className="quick-row">
-                  <span>Quick start:</span>
-                  {['DeFi', 'NFT', 'Analytics', 'Social', 'Mini-game'].map((cat) => (
-                    <button key={cat} className="category-pill magnet-small" onClick={() => insertCategory(cat)}>
-                      {cat}
-                    </button>
-                  ))}
-                </div>
 
                 <div className={classNames('char-count', visionText.length > 490 && 'char-danger', visionText.length > 400 && visionText.length <= 490 && 'char-warning')}>
                   {visionText.length}/500
@@ -1195,39 +1203,6 @@ function AppShellInternal() {
                 )}
               </section>
 
-              <section className="cycle-section">
-                <h3>CYCLE HISTORY</h3>
-                <div className="cycle-list">
-                  {cycleLog.length === 0 ? (
-                    <div className="empty-state">
-                      <Bot size={28} strokeWidth={1.5} />
-                      <span>No cycles run this session.</span>
-                    </div>
-                  ) : (
-                    cycleLog.map((entry) => (
-                      <div key={entry.id} className="cycle-item" onClick={() => setExpandedLogs((p) => ({ ...p, [entry.id]: !p[entry.id] }))}>
-                        <div className={classNames('status-dot', entry.status === 'DEPLOYED' && 'status-pass', entry.status === 'BLOCKED' && 'status-block', entry.status === 'REJECTED' && 'status-warning')} />
-                        <div className="cycle-main">
-                          <div className="mono-time">{entry.timestamp}</div>
-                          <div className="cycle-text">{entry.intent}</div>
-                          <div className="cycle-title">{entry.title || entry.reason}</div>
-                        </div>
-                        <div className="cycle-right">
-                          <span className="mono-time">Risk: {entry.risk}</span>
-                          <span className="mono-time">${entry.budgetUsed.toFixed(2)}</span>
-                        </div>
-                        <div className={classNames('cycle-expand', expandedLogs[entry.id] && 'cycle-expand-open')}>
-                          {(entry.logs || []).map((line) => (
-                            <p key={line}>{line}</p>
-                          ))}
-                          {entry.description ? <p>{entry.description}</p> : null}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </section>
-
               {appsQuery.data?.apps?.length ? (
                 <section className="cycle-section">
                   <h3>INCUBATING APPS</h3>
@@ -1371,6 +1346,32 @@ function AppShellInternal() {
                 <div className="settings-actions">
                   <button className="ghost-btn" onClick={onThemeToggle}>{theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}</button>
                   <button className="ghost-btn" onClick={() => { setDemoMode(false); onDisconnect(); }}>Reset Session</button>
+                </div>
+                <div className="mt-6">
+                  <h5 className="mb-3 text-sm font-semibold text-white">Industries / domains you&apos;re interested in</h5>
+                  <p className="mb-3 text-xs text-gray-500">Select the areas you want the agent to focus on when generating ideas.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {INDUSTRY_OPTIONS.map((industry) => (
+                      <button
+                        key={industry}
+                        type="button"
+                        onClick={() => toggleIndustry(industry)}
+                        className={classNames(
+                          'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                          interestedIndustries.includes(industry)
+                            ? 'border-[#ff6d00] bg-[#ff6d00]/20 text-[#ff6d00]'
+                            : 'border-gray-600 bg-gray-800/50 text-gray-400 hover:border-gray-500 hover:text-gray-300',
+                        )}
+                      >
+                        {industry}
+                      </button>
+                    ))}
+                  </div>
+                  {interestedIndustries.length > 0 && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      {interestedIndustries.length} selected: {interestedIndustries.join(', ')}
+                    </p>
+                  )}
                 </div>
               </div>
             </section>
