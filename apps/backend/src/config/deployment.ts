@@ -2,6 +2,11 @@
  * Deployment config for Base mainnet.
  * Loads from deployments/base.json (or DEPLOYMENT_PATH) with env overrides.
  * Allowed targets/tokens come from config only — no arbitrary execution.
+ *
+ * Strict mode (MAINNET_STRICT=true):
+ *   Fail-closed on misconfiguration — rejects zero addresses and empty
+ *   allowlists at load time so the server never silently runs unsafe.
+ *   Intended for production / CI. Local dev runs without it.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -27,6 +32,99 @@ export interface BaseDeployment {
 }
 
 const BASE_MAINNET_CHAIN_ID = 8453;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+// ─── Strict-mode validation ──────────────────────────────
+
+/** Whether MAINNET_STRICT=true is set in the environment. */
+export function isStrictMode(): boolean {
+  return process.env.MAINNET_STRICT === 'true';
+}
+
+/**
+ * Deployment configuration error — thrown at startup when MAINNET_STRICT=true
+ * and the deployment config is missing required production values.
+ */
+export class DeploymentConfigError extends Error {
+  public readonly violations: string[];
+  constructor(violations: string[]) {
+    const header = `[MAINNET_STRICT] Deployment config is not production-safe (${violations.length} violation(s)):`;
+    const body = violations.map((v, i) => `  ${i + 1}. ${v}`).join('\n');
+    super(`${header}\n${body}`);
+    this.name = 'DeploymentConfigError';
+    this.violations = violations;
+  }
+}
+
+/**
+ * Validate that a deployment config is safe for production.
+ * Collects ALL violations and throws a single error with all of them
+ * so operators can fix everything in one pass.
+ *
+ * Checks:
+ *   - agentSafeAccount is not the zero address
+ *   - entryPoint is not the zero address
+ *   - allowedTokens is non-empty and contains no zero addresses
+ *   - allowedTargets is non-empty and contains no zero addresses
+ *   - rpcUrl and bundlerUrl are non-empty
+ */
+function validateDeploymentStrict(dep: BaseDeployment): void {
+  const violations: string[] = [];
+
+  // ── Critical contract addresses ──
+  if (dep.agentSafeAccount === ZERO_ADDRESS) {
+    violations.push(
+      'agentSafeAccount is the zero address. Set AGENT_SAFE_ACCOUNT or update deployments/base.json.',
+    );
+  }
+  if (dep.entryPoint === ZERO_ADDRESS) {
+    violations.push(
+      'entryPoint is the zero address. Set ENTRY_POINT_ADDRESS or update deployments/base.json.',
+    );
+  }
+
+  // ── Allowlists must be non-empty ──
+  if (dep.allowedTokens.length === 0) {
+    violations.push(
+      'allowedTokens is empty — REVOKE_APPROVAL will reject all tokens. Set ALLOWED_TOKENS or update deployments/base.json.',
+    );
+  }
+  if (dep.allowedTargets.length === 0) {
+    violations.push(
+      'allowedTargets is empty — SWAP_REBALANCE will reject all router targets. Set ALLOWED_TARGETS or update deployments/base.json.',
+    );
+  }
+
+  // ── No zero addresses inside allowlists ──
+  const zeroTokens = dep.allowedTokens.filter((t) => t === ZERO_ADDRESS);
+  if (zeroTokens.length > 0) {
+    violations.push(
+      `allowedTokens contains ${zeroTokens.length} zero address(es). Remove them — zero address is never a valid ERC20.`,
+    );
+  }
+  const zeroTargets = dep.allowedTargets.filter((t) => t === ZERO_ADDRESS);
+  if (zeroTargets.length > 0) {
+    violations.push(
+      `allowedTargets contains ${zeroTargets.length} zero address(es). Remove them — zero address is never a valid router.`,
+    );
+  }
+
+  // ── Infrastructure URLs ──
+  if (!dep.rpcUrl || dep.rpcUrl.trim() === '') {
+    violations.push(
+      'rpcUrl is empty. Set BASE_RPC_URL for reliable mainnet connectivity.',
+    );
+  }
+  if (!dep.bundlerUrl || dep.bundlerUrl.trim() === '') {
+    violations.push(
+      'bundlerUrl is empty. Set BUNDLER_RPC_URL — UserOps cannot be submitted without a bundler.',
+    );
+  }
+
+  if (violations.length > 0) {
+    throw new DeploymentConfigError(violations);
+  }
+}
 
 function envString(name: string): string | undefined {
   const value = process.env[name];
@@ -118,9 +216,31 @@ function loadDeployment(): BaseDeployment {
 
 let _config: BaseDeployment | null = null;
 
+/**
+ * Get the deployment config (cached after first load).
+ *
+ * When MAINNET_STRICT=true, the first call validates the config against
+ * production safety requirements and throws DeploymentConfigError on failure.
+ * In non-strict mode (default), zero addresses and empty allowlists are
+ * permitted so local dev can iterate without real contract addresses.
+ */
 export function getDeployment(): BaseDeployment {
-  if (!_config) _config = loadDeployment();
+  if (!_config) {
+    _config = loadDeployment();
+    if (isStrictMode()) {
+      validateDeploymentStrict(_config);
+    }
+  }
   return _config;
+}
+
+/**
+ * Force-reload deployment config. Useful in tests or after config changes.
+ * Re-runs strict validation if MAINNET_STRICT=true.
+ */
+export function reloadDeployment(): BaseDeployment {
+  _config = null;
+  return getDeployment();
 }
 
 export function validateChainId(chainId: number): boolean {
