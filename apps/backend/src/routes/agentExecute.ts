@@ -41,7 +41,7 @@ import type { DecisionContext } from '../services/gemini.js';
 import { AgentSafeAccountAbi } from '../abi/AgentSafeAccount.js';
 import { EntryPointAbi } from '../abi/EntryPoint.js';
 import { buildCallDataFromIntent } from '../services/execution/callDataBuilder.js';
-import { getDeployment } from '../config/deployment.js';
+import { getDeployment, isTargetAllowed } from '../config/deployment.js';
 import type { ActionIntent } from '@agent-safe/shared';
 import { base } from 'viem/chains';
 import { Buffer } from 'buffer';
@@ -86,6 +86,26 @@ function isTestnetMode(): boolean {
 
 const BUILDER_CODE = process.env.BASE_BUILDER_CODE || 'agentsafe42';
 const BUILDER_SUFFIX_HEX = Buffer.from(BUILDER_CODE).toString('hex');
+
+type RouteType = 'UNISWAP' | 'AERODROME' | 'AAVE' | 'ALLOWLISTED_ROUTER';
+
+function classifyRouteType(routerTarget: string, route: unknown): RouteType {
+  const target = routerTarget.toLowerCase();
+  const uniswapRouter = process.env.UNISWAP_ROUTER_ADDRESS?.toLowerCase();
+  const aerodromeRouter = process.env.AERODROME_ROUTER_ADDRESS?.toLowerCase();
+  const aaveRouter = process.env.AAVE_ROUTER_ADDRESS?.toLowerCase();
+
+  if (uniswapRouter && target === uniswapRouter) return 'UNISWAP';
+  if (aerodromeRouter && target === aerodromeRouter) return 'AERODROME';
+  if (aaveRouter && target === aaveRouter) return 'AAVE';
+
+  const routeText = typeof route === 'string' ? route.toLowerCase() : '';
+  if (routeText.includes('uniswap')) return 'UNISWAP';
+  if (routeText.includes('aerodrome')) return 'AERODROME';
+  if (routeText.includes('aave')) return 'AAVE';
+
+  return 'ALLOWLISTED_ROUTER';
+}
 
 // ─── Request Schema ──────────────────────────────────────
 
@@ -190,9 +210,20 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   // ── 3. Fetch smart account balances ───────────────────
   // Chain/RPC: default to mainnet via deployment config; Sepolia if AGENT_TESTNET_MODE=true
   const testnet = isTestnetMode();
+  const dep = getDeployment();
+  if (!testnet && UNISWAP_CHAIN_ID !== dep.chainId) {
+    return res.json({
+      ok: true,
+      executed: false,
+      reason: `CHAIN_ID_MISMATCH: execute route is mainnet mode but Uniswap chainId=${UNISWAP_CHAIN_ID}.`,
+      decision: { action: 'DO_NOTHING', rationale: 'Chain mismatch', risks: ['Chain mismatch'] },
+      meta: { source: 'guardrail' },
+      session: sessionSummary(session),
+    });
+  }
   const rpcUrl = testnet
     ? (process.env.BASE_SEPOLIA_RPC_URL ?? process.env.BASE_RPC_URL ?? 'https://sepolia.base.org')
-    : getDeployment().rpcUrl;
+    : dep.rpcUrl;
 
   const publicClient = createPublicClient({
     chain: testnet ? baseSepolia : base,
@@ -205,7 +236,9 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   ]);
 
   // ── 4. Cap amountIn by session limit and available balance ─
-  const maxAmount = session.limits.maxAmountIn;
+  const maxPerCycleCap =
+    session.limits.maxTradeCapPerCycleBaseUnits ?? session.limits.maxAmountIn;
+  const maxAmount = maxPerCycleCap;
   const amountIn = balanceIn > maxAmount ? maxAmount : balanceIn;
 
   if (amountIn <= 0n) {
@@ -299,14 +332,27 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
 
   // ── 8. Backend guardrail enforcement ─── (MUST pass before UserOp) ───
   // a) Amount cap
-  const proposedAmount = BigInt(decision.amountIn);
-  if (proposedAmount > session.limits.maxAmountIn) {
+  let proposedAmount: bigint;
+  try {
+    proposedAmount = BigInt(decision.amountIn);
+  } catch {
     return res.json({
       ok: true,
       executed: false,
-      reason: `Proposed amountIn ${proposedAmount} exceeds session cap ${session.limits.maxAmountIn}`,
+      reason: `Invalid proposed amountIn from decision: ${decision.amountIn}`,
+      decision: { action: 'DO_NOTHING', rationale: 'Invalid amount', risks: ['Invalid amount'] },
+      meta: { source: 'guardrail' },
+      session: sessionSummary(session),
+    });
+  }
+  if (proposedAmount > maxPerCycleCap) {
+    return res.json({
+      ok: true,
+      executed: false,
+      reason: `Proposed amountIn ${proposedAmount} exceeds per-cycle cap ${maxPerCycleCap}`,
       decision: { action: 'DO_NOTHING', rationale: 'Session amount cap', risks: ['Cap exceeded'] },
       meta: { source: 'guardrail' },
+      session: sessionSummary(session),
     });
   }
   // b) Slippage cap
@@ -317,6 +363,7 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       reason: `Slippage ${decision.slippageBps} bps exceeds session cap ${session.limits.maxSlippageBps}`,
       decision: { action: 'DO_NOTHING', rationale: 'Slippage cap', risks: ['Cap exceeded'] },
       meta: { source: 'guardrail' },
+      session: sessionSummary(session),
     });
   }
   // c) Price impact cap
@@ -327,6 +374,7 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       reason: `Price impact ${quote.priceImpactBps} bps exceeds session cap ${session.limits.maxPriceImpactBps}`,
       decision: { action: 'DO_NOTHING', rationale: 'Price impact cap', risks: ['High price impact'] },
       meta: { source: 'guardrail' },
+      session: sessionSummary(session),
     });
   }
   // d) Quote must exist
@@ -337,6 +385,18 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       reason: 'No valid quote to execute',
       decision: { action: 'DO_NOTHING', rationale: 'No quote', risks: ['Quote unavailable'] },
       meta: { source: 'guardrail' },
+      session: sessionSummary(session),
+    });
+  }
+  // e) Quote uncertainty guardrail
+  if (quote.priceImpactBps == null) {
+    return res.json({
+      ok: true,
+      executed: false,
+      reason: 'Quote missing price impact; refusing uncertain trade state.',
+      decision: { action: 'DO_NOTHING', rationale: 'Uncertain quote state', risks: ['Missing price impact'] },
+      meta: { source: 'guardrail' },
+      session: sessionSummary(session),
     });
   }
 
@@ -352,12 +412,37 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return res.status(502).json({
-      ok: false,
-      error: 'Failed to fetch swap tx from Uniswap API',
-      message: msg.slice(0, 200),
+    return res.json({
+      ok: true,
+      executed: false,
+      reason: `Failed to fetch swap tx from Uniswap API: ${msg.slice(0, 200)}`,
+      decision: {
+        action: 'DO_NOTHING',
+        rationale: 'Swap tx unavailable from routing API',
+        risks: ['Routing API unavailable'],
+      },
+      meta: { source: 'guardrail' },
+      session: sessionSummary(session),
     });
   }
+
+  // ── 9.5 Enforce router allowlist before any UserOp build ─
+  const routerTarget = swapTx.to as `0x${string}`;
+  if (!isTargetAllowed(routerTarget)) {
+    return res.json({
+      ok: true,
+      executed: false,
+      reason: `Router target is not allowlisted: ${routerTarget}`,
+      decision: {
+        action: 'DO_NOTHING',
+        rationale: 'Router not in deployment allowlist',
+        risks: ['Router target not allowed'],
+      },
+      meta: { source: 'guardrail', routeType: 'ALLOWLISTED_ROUTER' as const },
+      session: sessionSummary(session),
+    });
+  }
+  const routeType = classifyRouteType(routerTarget, quote.route);
 
   // ── 10. Check bundler config ───────────────────────────
   const bundlerUrl = process.env.BUNDLER_RPC_URL;
@@ -371,7 +456,14 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       decision,
       quote,
       swapTx,
-      meta: { source: metaSource },
+      meta: {
+        source: metaSource,
+        routeType,
+        routerTarget,
+        gasCostWei: '0',
+        userOpHash: null,
+        txHash: null,
+      },
       session: sessionSummary(session),
     });
   }
@@ -379,7 +471,7 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   // ── 11. Build UserOp ───────────────────────────────────
   const entryPoint = testnet
     ? ((process.env.ENTRYPOINT_ADDRESS as `0x${string}` | undefined) ?? DEFAULT_ENTRYPOINT)
-    : getDeployment().entryPoint;
+    : dep.entryPoint;
 
   const smartAccountAddr = smartAccount as `0x${string}`;
 
@@ -415,25 +507,32 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       intentId: `swap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       runId: `agent-execute-${Date.now()}`,
       action: 'SWAP_REBALANCE',
-      chainId: getDeployment().chainId,
+      chainId: dep.chainId,
       to: smartAccount,
       value: String(BigInt(swapTx.value ?? '0x0')),
       data: '0x',
       meta: {
-        routerTarget: swapTx.to,
+        routerTarget,
         routerCalldata: swapTx.data,
         swapAmountIn: proposedAmount.toString(),
-        maxPerCycleWei: session.limits.maxAmountIn.toString(),
+        maxPerCycleWei: maxPerCycleCap.toString(),
       },
     };
 
     const buildResult = buildCallDataFromIntent(swapIntent);
     if (!buildResult.ok) {
       console.warn(`[agentExecute] Calldata builder rejected: ${buildResult.reason}`);
-      return res.status(403).json({
-        ok: false,
-        error: `Swap calldata rejected by safety gates: ${buildResult.reason}`,
-        reason: buildResult.reason,
+      return res.json({
+        ok: true,
+        executed: false,
+        reason: `Swap calldata rejected by safety gates: ${buildResult.reason}`,
+        decision: {
+          action: 'DO_NOTHING',
+          rationale: 'Builder guardrails rejected swap',
+          risks: [buildResult.reason],
+        },
+        meta: { source: 'guardrail', routeType, reason: buildResult.reason },
+        session: sessionSummary(session),
       });
     }
     accountCallData = buildResult.callData;
@@ -443,7 +542,7 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
       abi: AgentSafeAccountAbi,
       functionName: 'execute',
       args: [
-        swapTx.to as `0x${string}`,
+        routerTarget,
         BigInt(swapTx.value ?? '0x0'),
         swapTx.data as `0x${string}`,
       ],
@@ -453,6 +552,8 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
 
   const gasPrice = await publicClient.getGasPrice().catch(() => parseGwei('2'));
   const maxFeePerGas = (gasPrice * 120n) / 100n; // 20% buffer
+  const gasCostWei =
+    ((CALL_GAS_LIMIT + VERIFICATION_GAS_LIMIT + PRE_VERIFICATION_GAS) * maxFeePerGas).toString();
 
   const userOp = {
     sender: smartAccountAddr,
@@ -521,16 +622,49 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   }
 
   const submittedHash = bundlerJson.result as Hash;
+  let txHash: Hash | null = null;
+  try {
+    const receiptProbe = await fetch(bundlerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'eth_getUserOperationReceipt',
+        params: [submittedHash],
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const receiptJson = (await receiptProbe.json()) as {
+      result?: { receipt?: { transactionHash?: Hash } };
+    };
+    txHash = receiptJson.result?.receipt?.transactionHash ?? null;
+  } catch {
+    txHash = null;
+  }
 
-  console.log(`[agentExecute] UserOp submitted: ${submittedHash} for ${smartAccount}`);
+  console.log(
+    `[agentExecute] Execution analytics: ${JSON.stringify({
+      smartAccount,
+      routeType,
+      routerTarget,
+      userOpHash: submittedHash,
+      txHash,
+      gasCostWei,
+      source: metaSource,
+    })}`,
+  );
 
   return res.json({
     ok: true,
     executed: true,
     userOpHash: submittedHash,
+    txHash,
+    gasCostWei,
+    routeType,
     decision,
     quote,
-    meta: { source: metaSource },
+    meta: { source: metaSource, routeType, gasCostWei, userOpHash: submittedHash, txHash },
     session: sessionSummary(session),
   });
 });
