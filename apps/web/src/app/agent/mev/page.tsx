@@ -25,16 +25,16 @@ export default function MevAgentPage() {
       <header className="panel">
         <div className="flex items-center gap-2">
           <Shield className="h-[18px] w-[18px] text-[var(--color-accent)]" strokeWidth={1.5} />
-          <h1 className="text-[36px] leading-none">MEV Protection Agent</h1>
+          <h1 className="text-[32px] font-semibold tracking-[-0.03em] leading-tight" style={{ fontFamily: 'var(--font-syne)' }}>MEV protection agent</h1>
         </div>
-        <p className="mt-4 text-[14px] text-[var(--color-muted)]">
+        <p className="mt-4 text-[15px] leading-relaxed text-[var(--color-muted)]">
           Deterministic anti-MEV decisioning with auditable policy boundaries.
         </p>
       </header>
 
       <section className="section-gap grid gap-6 lg:grid-cols-5">
         <div className="panel lg:col-span-3">
-          <h2 className="text-[28px]">Agent Activity Log</h2>
+          <h2 className="text-[22px] font-semibold tracking-[-0.02em]" style={{ fontFamily: 'var(--font-syne)' }}>Agent activity log</h2>
           <div className="mt-6 space-y-4">
             {LOGS.map((item) => (
               <div key={item.id} className="border-b border-[var(--color-border)] pb-4 last:border-b-0">
@@ -47,7 +47,7 @@ export default function MevAgentPage() {
 
         <aside className="panel lg:col-span-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-[28px]">Configuration</h2>
+            <h2 className="text-[22px] font-semibold tracking-[-0.02em]" style={{ fontFamily: 'var(--font-syne)' }}>Configuration</h2>
             <button className="btn-ghost inline-flex items-center gap-2" onClick={() => setEditMode((v) => !v)}>
               <Edit3 className="h-[16px] w-[16px]" strokeWidth={1.5} />
               {editMode ? 'Close' : 'Edit'}

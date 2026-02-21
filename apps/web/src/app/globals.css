@@ -2,12 +2,245 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Dark glassy theme (Apple-like, darker) ────────────────── */
+:root {
+  --color-bg: #050508;
+  --color-bg-elevated: #0a0a0f;
+  --color-surface: rgba(18, 18, 24, 0.72);
+  --color-surface-solid: #121218;
+  --color-border: rgba(255, 255, 255, 0.07);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
+  --color-text: #f2f2f0;
+  --color-muted: #989896;
+  --color-subtle: #5c5c5a;
+  --color-accent: #ff7a24;
+  --color-accent-dim: #e06b18;
+  --color-success: #34c759;
+  --color-danger: #ff453a;
+  --color-warning: #ff9f0a;
+  --glass-blur: saturate(180%) blur(24px);
+  --glass-blur-strong: saturate(200%) blur(40px);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(22, 22, 28, 0.65);
+  --glass-shine: rgba(255, 255, 255, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+}
+
 * {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html,
 body {
   margin: 0;
   padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-dm, ui-sans-serif, system-ui, sans-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Typography ───────────────────────────────────────────── */
+h1, h2, h3, h4 {
+  font-family: var(--font-syne, ui-sans-serif, system-ui, sans-serif);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.mono {
+  font-family: var(--font-jet, ui-monospace, monospace);
+  letter-spacing: 0.02em;
+}
+
+/* ─── Layout (page, section-gap) ───────────────────────────── */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 100%;
+}
+
+.section-gap {
+  margin-top: 8px;
+}
+
+.section-gap + .section-gap {
+  margin-top: 24px;
+}
+
+/* ─── Glass panels ──────────────────────────────────────────── */
+.panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--glass-shine) 0%, transparent 50%);
+  mask-image: linear-gradient(180deg, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, transparent 100%);
+}
+
+.panel-tight {
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* ─── Nav (sidebar) ────────────────────────────────────────── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-decoration: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.nav-item:hover {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-item.active {
+  color: var(--color-accent);
+  background: rgba(255, 122, 36, 0.1);
+}
+
+/* ─── Buttons ──────────────────────────────────────────────── */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--color-border-strong);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(180deg, var(--color-accent) 0%, var(--color-accent-dim) 100%);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(255, 122, 36, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 20px rgba(255, 122, 36, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* ─── Inputs ───────────────────────────────────────────────── */
+.input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 122, 36, 0.15);
+}
+
+/* ─── Table ────────────────────────────────────────────────── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 500;
+  color: var(--color-subtle);
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-jet, ui-monospace, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ─── Glass chrome (sidebar / bottom nav) ───────────────────── */
+.glass-sidebar {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 1px 0 0 var(--glass-border);
+}
+
+.glass-bottom {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: 0 -1px 0 var(--glass-border);
 }

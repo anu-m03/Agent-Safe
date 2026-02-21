@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getSpatialAtlas, getAppEvolutionAtlas, seedTestApp } from '@/services/backendClient';
+import { getAppEvolutionAtlas, seedTestApp } from '@/services/backendClient';
 import type { AppSpatialMemory, AppSpatialMarker, AppSpatialZone } from '@/services/backendClient';
-import type { SpatialMemory, AgentMarker, DetectedZone } from '@agent-safe/shared';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -37,36 +36,21 @@ import {
   Sun,
   Users,
   Vault,
+  Vote,
   Wallet,
   XCircle,
+  Activity,
 } from 'lucide-react';
-import { Syne, DM_Sans, JetBrains_Mono } from 'next/font/google';
-import { createConfig, WagmiProvider, useAccount, useConnect, useDisconnect } from 'wagmi';
-import { base } from 'wagmi/chains';
+import { createConfig, WagmiProvider, useAccount, useConnect, useDisconnect, useChainId, useSwitchChain } from 'wagmi';
+import { base, baseSepolia } from 'wagmi/chains';
 import { coinbaseWallet, injected, walletConnect } from 'wagmi/connectors';
 import { http } from 'viem';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Highlight, themes } from 'prism-react-renderer';
+import { QRCodeSVG } from 'qrcode.react';
 
-const syne = Syne({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-syne' });
-const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-dm' });
-const jetbrains = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-jet' });
-
-const queryClient = new QueryClient();
-
-const wagmiConfig = createConfig({
-  chains: [base],
-  connectors: [
-    injected(),
-    coinbaseWallet({ appName: 'AgentSafe' }),
-    walletConnect({ projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'demo-project-id' }),
-  ],
-  transports: {
-    [base.id]: http(),
-  },
-  ssr: true,
-});
+// queryClient and wagmiConfig are created lazily inside the Page component
+// (see bottom of file) to prevent module-level WebSocket init from
+// interfering with Next.js HMR subscriptions.
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 const SCRAMBLE_CHARS = '0123456789ABCDEF@#$%';
@@ -84,7 +68,7 @@ type Particle = {
   cluster: 0 | 1 | 2;
   phase: number;
 };
-type Tab = 'agent' | 'stats' | 'settings';
+type Tab = 'agent' | 'stats' | 'settings' | 'spatial';
 type Verdict = 'DEPLOYED' | 'BLOCKED' | 'REJECTED' | null;
 type ToastTone = 'accent' | 'pass' | 'block' | 'warning';
 
@@ -174,6 +158,20 @@ type CycleEntry = {
   description?: string;
 };
 
+type FeedItem = { id: string; icon: string; text: string; time: string };
+type Proposal = {
+  id: string;
+  title: string;
+  source: string;
+  state: string;
+  risk: number;
+  signals: string[];
+  summary: string;
+  recommendation: string;
+  confidence: number;
+  vetoTime?: number;
+};
+
 const HEX_CHARS = '0123456789ABCDEF';
 const walletAddress = '0x742d35Cc6634C0532925a3b8D4C9C8f3a1bE4c2';
 
@@ -249,6 +247,7 @@ const areaData = [
 function cssValue(name: string) {
   if (typeof window === 'undefined') return 'rgb(255,255,255)';
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BACKEND}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -396,94 +395,6 @@ function LandingBarsCanvas({ active }: { active: boolean }) {
         if (near180) color = 'rgba(255,109,0,0.22)';
         if (near80) color = 'rgba(255,109,0,0.42)';
 
-  const [bubbleOpen, setBubbleOpen] = useState(false);
-  const bubbleRef = useRef<HTMLDivElement | null>(null);
-
-  // ── Spatial Atlas state ────────────────────────────────
-  const [spatialTab, setSpatialTab] = useState<'governance' | 'evolution'>('governance');
-  const [spaces, setSpaces] = useState<SpatialMemory[]>([]);
-  const [spacesLoading, setSpacesLoading] = useState(false);
-  const [spacesError, setSpacesError] = useState<string | null>(null);
-  const [severityFilter, setSeverityFilter] = useState<'all' | 'low' | 'med' | 'high'>('all');
-  const [recFilter, setRecFilter] = useState<'all' | 'FOR' | 'AGAINST' | 'ABSTAIN'>('all');
-  const [atlas, setAtlas] = useState<AppSpatialMemory[]>([]);
-  const [atlasLoading, setAtlasLoading] = useState(false);
-  const [atlasError, setAtlasError] = useState<string | null>(null);
-  const [seedStatus, setSeedStatus] = useState<string | null>(null);
-
-  async function handleSeedTest() {
-    setSeedStatus('Seeding…');
-    const res = await seedTestApp();
-    if (res.ok) {
-      setSeedStatus(`✓ Seeded “${res.data?.title}” — generating scene…`);
-      // poll atlas after a short delay so the processing entry appears
-      setTimeout(() => { loadEvolutionAtlas(); setSeedStatus(null); }, 3000);
-    } else {
-      setSeedStatus(`✗ ${res.error}`);
-      setTimeout(() => setSeedStatus(null), 4000);
-    }
-  }
-
-  const loadGovernanceSpaces = useCallback(async () => {
-    setSpacesLoading(true);
-    const res = await getSpatialAtlas();
-    if (res.ok) { setSpaces(res.data.spaces); setSpacesError(null); }
-    else setSpacesError(res.error);
-    setSpacesLoading(false);
-  }, []);
-
-  const loadEvolutionAtlas = useCallback(async () => {
-    setAtlasLoading(true);
-    const res = await getAppEvolutionAtlas();
-    if (res.ok) { setAtlas(res.data.atlas); setAtlasError(null); }
-    else setAtlasError(res.error);
-    setAtlasLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (view === 'spatial' && spaces.length === 0 && !spacesLoading) loadGovernanceSpaces();
-  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (view === 'spatial' && spatialTab === 'evolution' && atlas.length === 0 && !atlasLoading) loadEvolutionAtlas();
-  }, [view, spatialTab]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const spatialFiltered = spaces.filter((s) => {
-    if (s.status !== 'complete') return true;
-    const sevOk = severityFilter === 'all' || spatialMaxSeverity(s) === severityFilter;
-    const recOk = recFilter === 'all' || s.voteRecommendation === recFilter;
-    return sevOk && recOk;
-  });
-
-  const [navHover, setNavHover] = useState('');
-  const navRef = useRef<HTMLDivElement | null>(null);
-  const navButtons = useRef<Record<string, HTMLButtonElement | null>>({});
-  const [indicatorX, setIndicatorX] = useState(0);
-
-  const [statKey, setStatKey] = useState<Record<string, number>>({ a: 0, b: 0, c: 0, d: 0, e: 0, hf: 0, cr: 0, lp: 0 });
-  const [headlineKey, setHeadlineKey] = useState(0);
-
-  const appView = connected ? view : 'landing';
-
-  const heading = useScramble('AgentSafe', 1000, headlineKey);
-  const statA = useScramble('14', 400, statKey.a);
-  const statB = useScramble('7', 400, statKey.b);
-  const statC = useScramble('3', 400, statKey.c);
-  const statD = useScramble('1,204', 400, statKey.d);
-  const statE = useScramble('847', 400, statKey.e);
-  const hf = useScramble('1.42', 400, statKey.hf);
-  const cr = useScramble('14,200 USDC', 400, statKey.cr);
-  const lp = useScramble('$1,840', 400, statKey.lp);
-
-  const consensusText = useScramble(consensus, 600, resultKey);
-
-  const proposals = useMemo(() => {
-    return proposalSeed.filter((p) => {
-      const tabMatch = proposalTab === 'all' ? true : proposalTab === 'active' ? p.state === 'active' : proposalTab === 'vetoed' ? p.state === 'vetoed' : p.state === 'voted';
-      const queryMatch = proposalQuery ? p.title.toLowerCase().includes(proposalQuery.toLowerCase()) : true;
-      return tabMatch && queryMatch;
-    });
-  }, [proposalQuery, proposalTab]);
         ctx.fillStyle = color;
         ctx.fillRect(x, canvas.height - finalHeight, barWidth, finalHeight);
       }
@@ -632,6 +543,7 @@ function AppShellInternal() {
   const [visionText, setVisionText] = useState('');
   const [showConnectors, setShowConnectors] = useState(false);
   const [connectorError, setConnectorError] = useState('');
+  const [wcModal, setWcModal] = useState<{ uri: string; label: string } | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runPulse, setRunPulse] = useState(0);
   const [pipelineVisible, setPipelineVisible] = useState(false);
@@ -653,6 +565,7 @@ function AppShellInternal() {
   const [bubbleOpen, setBubbleOpen] = useState(false);
   const [runTrigger, setRunTrigger] = useState(0);
   const [wordmarkTrigger, setWordmarkTrigger] = useState(1);
+  const [outcomeFlash, setOutcomeFlash] = useState<'pass' | 'block' | null>(null);
 
   const [pipelineResult, setPipelineResult] = useState<PipelineResponse | null>(null);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
@@ -674,7 +587,30 @@ function AppShellInternal() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
+  const chainId = useChainId();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
   const qc = useQueryClient();
+
+  const SUPPORTED_CHAIN_IDS = [base.id, baseSepolia.id] as number[];
+  const onSupportedChain = !isConnected || demoMode || SUPPORTED_CHAIN_IDS.includes(chainId);
+  const chainLabel = chainId === base.id ? 'Base Mainnet'
+    : chainId === baseSepolia.id ? 'Base Sepolia'
+    : 'Unsupported Network';
+  const chainPillClass = !isConnected || demoMode ? ''
+    : chainId === base.id ? ''
+    : chainId === baseSepolia.id ? 'net-pill-testnet'
+    : 'net-pill-wrong';
+
+  // Deduplicate connectors: normalise "Injected" → "MetaMask", then keep first per name.
+  const uniqueConnectors = useMemo(() => {
+    const seen = new Set<string>();
+    return connectors.filter((c) => {
+      const label = c.name === 'Injected' ? 'MetaMask' : c.name;
+      if (seen.has(label.toLowerCase())) return false;
+      seen.add(label.toLowerCase());
+      return true;
+    });
+  }, [connectors]);
 
   const walletAddress = demoMode ? '0x0000000000000000000000000000000000000001' : address || '';
   const onApp = Boolean(walletAddress) && (isConnected || demoMode);
@@ -696,6 +632,13 @@ function AppShellInternal() {
     queryFn: () => api<{ apps: AppRow[] }>('/api/app-agent/apps'),
     enabled: Boolean(walletAddress),
     refetchInterval: 15_000,
+  });
+
+  const appEvolutionQuery = useQuery({
+    queryKey: ['appEvolutionAtlas'],
+    queryFn: getAppEvolutionAtlas,
+    enabled: onApp,
+    refetchInterval: 60_000,
   });
 
   const addToast = useCallback((text: string, tone: ToastTone, ttl = 3500, persistent = false) => {
@@ -803,6 +746,9 @@ function AppShellInternal() {
     setVisionText(value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.max(160, e.target.scrollHeight)}px`;
+    if (panelRef.current) {
+      panelRef.current.style.setProperty('--fill-pct', `${(value.length / 500) * 100}%`);
+    }
   };
 
   const runMutation = useMutation({
@@ -854,6 +800,8 @@ function AppShellInternal() {
       setRunTrigger((v) => v + 1);
       setIsRunning(false);
       setOutputVisible(true);
+      setOutcomeFlash(finalVerdict === 'DEPLOYED' ? 'pass' : 'block');
+      window.setTimeout(() => setOutcomeFlash(null), 700);
 
       const safetyRisk = pipeline?.safety?.riskScore || 0;
       const budgetBefore = budgetQuery.data?.treasuryUsd || 0;
@@ -958,6 +906,25 @@ function AppShellInternal() {
 
   const handleConnector = async (connector: (typeof connectors)[number]) => {
     setConnectorError('');
+    const isWC = connector.id === 'walletConnect' || connector.name.toLowerCase().includes('walletconnect');
+    if (isWC) {
+      // Intercept the display_uri before connecting so we can show a QR code
+      const emitter = (connector as any).emitter;
+      const onMsg = ({ type, data }: { type: string; data?: unknown }) => {
+        if (type === 'display_uri' && typeof data === 'string') {
+          setWcModal({ uri: data, label: connector.name });
+          emitter?.off('message', onMsg);
+        }
+      };
+      emitter?.on('message', onMsg);
+      try {
+        connect({ connector });
+      } catch (err) {
+        emitter?.off('message', onMsg);
+        setConnectorError(err instanceof Error ? err.message : 'Connection failed');
+      }
+      return;
+    }
     try {
       connect({ connector });
     } catch (err) {
@@ -1089,17 +1056,84 @@ function AppShellInternal() {
   const runDisabled = !visionText.trim() || isRunning || (!isConnected && !demoMode);
 
   return (
-    <div className={classNames(syne.variable, dmSans.variable, jetbrains.variable, 'app-root')}>
+    <div className={classNames('app-root', outcomeFlash && `outcome-flash outcome-flash-${outcomeFlash}`)}>
+      {/* ── WalletConnect QR Modal ───────────────────────────────── */}
+      {wcModal ? (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 999,
+            background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setWcModal(null)}
+        >
+          <div
+            style={{
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 20, padding: '28px 32px', maxWidth: 360, width: '92vw',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--accent)' }}>
+                <path d="M7.3 9.2a6.6 6.6 0 0 1 9.4 0l.3.3.3-.3a7 7 0 0 0-10 0l.3.3Z" fill="currentColor" />
+                <path d="M9 10.9a4.2 4.2 0 0 1 6 0l.3.3.3-.3a4.6 4.6 0 0 0-6.6 0l.3.3Z" fill="currentColor" />
+                <path d="m12 13.3 1.1 1.1L12 15.5l-1.1-1.1L12 13.3Z" fill="currentColor" />
+              </svg>
+              <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>Scan with any wallet</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-subtle)', margin: 0, alignSelf: 'flex-start', lineHeight: 1.6 }}>
+              Open any WalletConnect-compatible wallet and scan this code. MetaMask Mobile, Rainbow, Uniswap Wallet, Trust, Phantom, and 400+ others are supported.
+            </p>
+            <div style={{
+              padding: 16, background: '#ffffff', borderRadius: 14,
+              display: 'inline-flex',
+            }}>
+              <QRCodeSVG
+                value={wcModal.uri}
+                size={240}
+                level="Q"
+                marginSize={0}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+              <button
+                style={{
+                  flex: 1, fontSize: 12, padding: '8px 12px',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  background: 'transparent', color: 'var(--text-subtle)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+                onClick={() => { void navigator.clipboard.writeText(wcModal.uri); }}
+              >
+                Copy URI
+              </button>
+              <button
+                style={{
+                  flex: 1, fontSize: 12, padding: '8px 12px',
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  background: 'transparent', color: 'var(--danger)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+                onClick={() => setWcModal(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {!onApp && !reducedMotion && !isMobile ? <LandingBarsCanvas active /> : null}
       {onApp && !reducedMotion ? <FlowLinesCanvas active runPulse={runPulse} /> : null}
 
       <header className="top-bar">
-        <div className="brand-small">AgentSafe</div>
+        <div className="brand-small">AgentSafe Lab</div>
         {onApp ? (
-          <div className="net-pill">
+          <div className={classNames('net-pill', chainPillClass)}>
             <Globe size={12} strokeWidth={1.5} />
             <span className={classNames('live-dot', healthState === 'degraded' && 'live-dot-warning', healthState === 'offline' && 'live-dot-block')} />
-            <span>Base Mainnet</span>
+            <span>{demoMode ? 'Base Mainnet' : chainLabel}</span>
           </div>
         ) : null}
         <div className="top-actions">
@@ -1131,6 +1165,8 @@ function AppShellInternal() {
         </div>
       </header>
 
+      <div className={classNames('neural-thread', isRunning && 'active')} aria-hidden />
+
       {onApp && isOffline && !healthBannerDismissed ? (
         <div className="offline-banner">
           <AlertTriangle size={14} strokeWidth={1.5} />
@@ -1141,59 +1177,89 @@ function AppShellInternal() {
         </div>
       ) : null}
 
+      {onApp && isConnected && !demoMode && !onSupportedChain ? (
+        <div className="offline-banner" style={{ background: 'color-mix(in srgb, var(--warning) 12%, transparent)', borderColor: 'color-mix(in srgb, var(--warning) 35%, transparent)' }}>
+          <AlertTriangle size={14} strokeWidth={1.5} style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            <strong>{chainLabel}</strong> is not supported. Switch to Base to use AgentSafe.
+          </span>
+          <button
+            className="ghost-btn"
+            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+            disabled={isSwitching}
+            onClick={() => switchChain({ chainId: base.id })}
+          >
+            {isSwitching ? 'Switching…' : 'Base Mainnet'}
+          </button>
+          <button
+            className="ghost-btn"
+            style={{ fontSize: 11, padding: '3px 10px', flexShrink: 0 }}
+            disabled={isSwitching}
+            onClick={() => switchChain({ chainId: baseSepolia.id })}
+          >
+            {isSwitching ? 'Switching…' : 'Base Sepolia'}
+          </button>
+        </div>
+      ) : null}
+
       {!onApp ? (
         <>
           <main className="landing-main">
             <section className="landing-text">
               <h1 className={classNames('wordmark', wordmark === 'AgentSafe' && 'wordmark-ready')}>{wordmark}</h1>
               <h2 className="tagline split">
-                <span>Autonomous apps.</span>
-                <span>Built from your vision.</span>
+                <span>Describe the outcome.</span>
+                <span>The agent builds the app.</span>
               </h2>
-              <p className="desc">Connect your wallet. Describe your idea. Watch it deploy itself on Base.</p>
+              <p className="desc">A production-minded build loop for Base. Prompt, evaluate risk, and ship with guardrails.</p>
 
               <div className="feature-pills">
-                <div className="pill-row"><Sparkles size={14} strokeWidth={1.5} /><span>Trend-aware idea generation</span></div>
-                <div className="pill-row"><ShieldCheck size={14} strokeWidth={1.5} /><span>Autonomous safety pipeline</span></div>
-                <div className="pill-row"><Rocket size={14} strokeWidth={1.5} /><span>Deploys to Base automatically</span></div>
+                <div className="pill-row"><Sparkles size={14} strokeWidth={1.5} /><span>Agent-driven product ideation</span></div>
+                <div className="pill-row"><ShieldCheck size={14} strokeWidth={1.5} /><span>Safety and policy checks before deploy</span></div>
+                <div className="pill-row"><Rocket size={14} strokeWidth={1.5} /><span>Structured output: verdict, budget, generated code</span></div>
               </div>
 
               <div className="connect-wrap">
                 <button className="cta-btn magnet" onClick={() => setShowConnectors((v) => !v)} disabled={isPending}>
                   {isPending ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Wallet size={18} strokeWidth={1.5} />}
-                  <span>{isPending ? 'Connecting...' : 'Connect Wallet'}</span>
+                  <span>{isPending ? 'Connecting...' : 'Connect wallet'}</span>
                 </button>
 
                 <div className={classNames('connector-list', showConnectors && 'connector-list-open')}>
-                  {connectors.slice(0, 3).map((connector, i) => (
-                    <button key={connector.uid} className="connector-item" onClick={() => handleConnector(connector)} style={{ animationDelay: `${i * 60}ms` }}>
-                      <span className="connector-icon" aria-hidden>
-                        {connector.name.includes('Coinbase') ? (
-                          <svg className="wallet-svg coinbase" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="10" fill="currentColor" />
-                            <path d="M15.6 9.5a4 4 0 1 0 0 5h-2.2a2 2 0 1 1 0-5h2.2Z" fill="var(--surface)" />
-                          </svg>
-                        ) : connector.name.includes('WalletConnect') ? (
-                          <svg className="wallet-svg wc" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <path d="M7.3 9.2a6.6 6.6 0 0 1 9.4 0l.3.3.3-.3a7 7 0 0 0-10 0l.3.3Z" fill="currentColor" />
-                            <path d="M9 10.9a4.2 4.2 0 0 1 6 0l.3.3.3-.3a4.6 4.6 0 0 0-6.6 0l.3.3Z" fill="currentColor" />
-                            <path d="m12 13.3 1.1 1.1L12 15.5l-1.1-1.1L12 13.3Z" fill="currentColor" />
-                          </svg>
-                        ) : (
-                          <svg className="wallet-svg metamask" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <path d="M3 12.2 12 3l9 9.2-9 5.3-9-5.3Z" fill="currentColor" />
-                            <path d="m3 13.8 9 7.2 9-7.2-9 5.3-9-5.3Z" fill="currentColor" opacity="0.82" />
-                          </svg>
-                        )}
-                      </span>
-                      <span>{connector.name.includes('Injected') ? 'MetaMask' : connector.name}</span>
-                    </button>
-                  ))}
+                  {uniqueConnectors.map((connector, i) => {
+                    const label = connector.name === 'Injected' ? 'MetaMask' : connector.name;
+                    const isWC = connector.id === 'walletConnect' || connector.name.toLowerCase().includes('walletconnect');
+                    return (
+                      <button key={connector.uid} className="connector-item" onClick={() => handleConnector(connector)} style={{ animationDelay: `${i * 60}ms` }}>
+                        <span className="connector-icon" aria-hidden>
+                          {label.includes('Coinbase') ? (
+                            <svg className="wallet-svg coinbase" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" fill="currentColor" />
+                              <path d="M15.6 9.5a4 4 0 1 0 0 5h-2.2a2 2 0 1 1 0-5h2.2Z" fill="var(--surface)" />
+                            </svg>
+                          ) : isWC ? (
+                            <svg className="wallet-svg wc" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                              <path d="M7.3 9.2a6.6 6.6 0 0 1 9.4 0l.3.3.3-.3a7 7 0 0 0-10 0l.3.3Z" fill="currentColor" />
+                              <path d="M9 10.9a4.2 4.2 0 0 1 6 0l.3.3.3-.3a4.6 4.6 0 0 0-6.6 0l.3.3Z" fill="currentColor" />
+                              <path d="m12 13.3 1.1 1.1L12 15.5l-1.1-1.1L12 13.3Z" fill="currentColor" />
+                            </svg>
+                          ) : (
+                            <svg className="wallet-svg metamask" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                              <path d="M3 12.2 12 3l9 9.2-9 5.3-9-5.3Z" fill="currentColor" />
+                              <path d="m3 13.8 9 7.2 9-7.2-9 5.3-9-5.3Z" fill="currentColor" opacity="0.82" />
+                            </svg>
+                          )}
+                        </span>
+                        <span>{label}</span>
+                        {isWC ? <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-subtle)', opacity: 0.7 }}>QR</span> : null}
+                      </button>
+                    );
+                  })}
                   {connectorError ? <div className="connector-error">{connectorError}</div> : null}
                 </div>
 
                 <button className="demo-link" onClick={startDemo}>
-                  Try Demo <ArrowRight size={12} strokeWidth={1.5} />
+                  Open demo workspace <ArrowRight size={12} strokeWidth={1.5} />
                 </button>
               </div>
             </section>
@@ -1207,10 +1273,11 @@ function AppShellInternal() {
       ) : (
         <main className="app-main">
           {activeTab === 'agent' ? (
-            <section className="agent-col">
+            <section className="agent-layout">
+              <div className="input-col">
               <div className="center-head">
-                <h2 className={classNames('vision-title', focusVision && 'vision-title-blur')}>What outcome do you want to see?</h2>
-                <p>Describe the app you want to exist in the world.</p>
+                <h2 className={classNames('vision-title', focusVision && 'vision-title-blur')}>What should the agent build?</h2>
+                <p>Describe a concrete user outcome. The agent will generate, evaluate, and validate a deploy candidate.</p>
               </div>
 
               <div
@@ -1227,35 +1294,59 @@ function AppShellInternal() {
                   onChange={onTextareaInput}
                   onFocus={() => setFocusVision(true)}
                   onBlur={() => setFocusVision(false)}
-                  placeholder="xyz"
+                  aria-describedby="vision-char-count"
+                  placeholder="Example: Build a Base mini-app that helps NFT communities launch weekly quests with onchain rewards and anti-sybil scoring."
                 />
 
-                <div className={classNames('char-count', visionText.length > 490 && 'char-danger', visionText.length > 400 && visionText.length <= 490 && 'char-warning')}>
-                  {visionText.length}/500
+                <div
+                  id="vision-char-count"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className={classNames('char-count', visionText.length > 490 && 'char-danger', visionText.length > 400 && visionText.length <= 490 && 'char-warning')}
+                >
+                  {visionText.length}/500 · {Math.max(0, 500 - visionText.length)} left
                 </div>
               </div>
 
               <button className="run-btn magnet" disabled={runDisabled} onClick={startRun}>
                 {isRunning ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Rocket size={18} strokeWidth={1.5} />}
-                <span>{isRunning ? 'Running pipeline...' : 'Run Agent Cycle'}</span>
+                <span>{isRunning ? 'Running pipeline...' : 'Run build cycle'}</span>
                 {sparks.map((spark) => (
                   <SparkBurst key={spark.id} x={spark.x} y={spark.y} tone={spark.tone} />
                 ))}
               </button>
 
+              {!outputVisible && !pipelineVisible ? (
+                <div className="empty-slot">
+                  <div className="empty-icon"><Bot size={32} strokeWidth={1} /></div>
+                  <p className="empty-title">Start with an outcome</p>
+                  <p className="empty-hint">Describe what users should get, then run your first build cycle.</p>
+                </div>
+              ) : null}
+              </div>{/* end input-col */}
+
+              <div className="live-col">
               <section className={classNames('panel pipeline-panel', pipelineVisible && 'panel-show')}>
                 <div className="panel-head">
                   <span>PIPELINE</span>
                   <span className="mono-accent">{pipelineStage} / 5</span>
                 </div>
 
-                <div className="stage-row">
+                <div className="stage-row" role="group" aria-label="Pipeline stages">
+                  <div className="stage-connector-bg" aria-hidden />
+                  <div className="stage-connector-fill" aria-hidden style={{ width: `${Math.min(100, ((pipelineStage - 1) / 4) * 80)}%` }} />
                   {stageNames.map((name, idx) => {
                     const Icon = stageIcons[idx];
                     const state = pipelineStates[idx];
                     return (
                       <div key={name} className="stage-item">
-                        <div className={classNames('stage-node', `stage-${state}`, state === 'active' && 'electric')}>
+                        <div
+                          className={classNames('stage-node', `stage-${state}`, state === 'active' && 'electric')}
+                          role="status"
+                          aria-label={`Stage ${name}: ${state}`}
+                        >
+                          {state === 'active' ? <span className="stage-pulse" aria-hidden /> : null}
                           {state === 'complete' ? (
                             <CheckCircle2 size={16} strokeWidth={1.5} />
                           ) : state === 'failed' ? (
@@ -1280,16 +1371,16 @@ function AppShellInternal() {
                 </div>
 
                 <div className="output-grid">
-                  <article className="output-card glare">
-                    <header><Lightbulb size={14} strokeWidth={1.5} />VISION UNDERSTOOD</header>
-                    <p>{outputIdea?.description || 'No description returned from pipeline.'}</p>
+                  <article className="output-card glare" role="region" aria-label="Vision understood">
+                    <header><Lightbulb size={14} strokeWidth={1.5} />INTENT SUMMARY</header>
+                    <p>{outputIdea?.description || 'No intent summary returned from the pipeline.'}</p>
                   </article>
 
-                  <article className="output-card glare">
-                    <header><Sparkles size={14} strokeWidth={1.5} />GENERATED IDEA</header>
+                  <article className="output-card glare" role="region" aria-label="Generated idea">
+                    <header><Sparkles size={14} strokeWidth={1.5} />PROPOSED APP</header>
                     <h4>{outputIdea?.title || 'No title'}</h4>
                     <div className="template-badge">{outputIdea?.templateId || 'template: none'}</div>
-                    <p>{outputIdea?.description || 'No idea details were generated.'}</p>
+                    <p>{outputIdea?.description || 'No proposal details were generated.'}</p>
                     <div className="chip-wrap">
                       {(outputIdea?.capabilities || []).slice(0, 6).map((cap) => (
                         <span key={cap} className="cap-chip">{cap}</span>
@@ -1297,7 +1388,7 @@ function AppShellInternal() {
                     </div>
                   </article>
 
-                  <article className="output-card glare">
+                  <article className={classNames('output-card glare', pipelineResult?.safety?.verdict === 'PASS' ? 'card-pass' : 'card-block')} role="region" aria-label="Safety check result">
                     <header><ScanLine size={14} strokeWidth={1.5} />SAFETY CHECK</header>
                     {(pipelineResult?.safety?.verdict || 'BLOCK') === 'PASS' ? (
                       <>
@@ -1317,7 +1408,7 @@ function AppShellInternal() {
                     )}
                   </article>
 
-                  <article className="output-card glare">
+                  <article className="output-card glare" role="region" aria-label="Budget governor">
                     <header><Gauge size={14} strokeWidth={1.5} />BUDGET GOVERNOR</header>
                     <div className="gauge-track"><div className="gauge-fill" style={{ width: `${usedPct}%` }} /></div>
                     <div className="gauge-labels">
@@ -1341,11 +1432,22 @@ function AppShellInternal() {
                         <ChevronDown size={14} strokeWidth={1.5} className={classNames(codeExpanded && 'rot')} />
                       </span>
                     </button>
-                    <div className={classNames('code-panel', codeExpanded && 'code-panel-open')}>
-                      <div className="code-actions">
-                        <button className="icon-ghost" onClick={onCopyCode}>{copied ? <CheckCircle2 size={14} strokeWidth={1.5} /> : <Copy size={14} strokeWidth={1.5} />}</button>
+                    <div className={classNames('code-panel code-viewer', codeExpanded && 'code-panel-open')} role="region" aria-label="Generated app code">
+                      <div className="code-title-bar">
+                        <span className="code-dot code-dot-r" />
+                        <span className="code-dot code-dot-y" />
+                        <span className="code-dot code-dot-g" />
+                        <span style={{ flex: 1, marginLeft: 8, fontSize: 11, color: 'var(--text-subtle)' }}>
+                          {pipelineResult?.generatedDapp?.name || 'generated-app'}
+                        </span>
+                        <span className="code-lang-badge">JSX</span>
+                        <button className="icon-ghost" style={{ width: 28, height: 28, marginLeft: 6 }} onClick={onCopyCode} aria-label="Copy code to clipboard">
+                          {copied ? <CheckCircle2 size={13} strokeWidth={1.5} /> : <Copy size={13} strokeWidth={1.5} />}
+                        </button>
                         <button
                           className="icon-ghost"
+                          style={{ width: 28, height: 28, marginLeft: 4 }}
+                          aria-label="Download code"
                           onClick={() => {
                             const blob = new Blob([codeString], { type: 'text/plain;charset=utf-8' });
                             const href = URL.createObjectURL(blob);
@@ -1356,29 +1458,25 @@ function AppShellInternal() {
                             URL.revokeObjectURL(href);
                           }}
                         >
-                          <Download size={14} strokeWidth={1.5} />
+                          <Download size={13} strokeWidth={1.5} />
                         </button>
                       </div>
-                      <div className="code-scroll">
-                        <Highlight code={codeString} language="jsx" theme={theme === 'dark' ? themes.nightOwl : themes.github}>
-                          {({ className, style, tokens, getLineProps, getTokenProps }) => (
-                            <pre className={className} style={style}>
-                              {tokens.map((line, i) => (
-                                <div key={i} {...getLineProps({ line })}>
-                                  {line.map((token, key) => (
-                                    <span key={key} {...getTokenProps({ token })} />
-                                  ))}
-                                </div>
-                              ))}
-                            </pre>
-                          )}
-                        </Highlight>
+                      <div className="code-body" tabIndex={0}>
+                        {codeString.split('\n').map((line, i) => (
+                          <div key={i} className="code-line">
+                            <span className="line-num">{String(i + 1).padStart(3, ' ')}</span>
+                            <span className={classNames(
+                              'line-content',
+                              line.trimStart().startsWith('//') && 'tok-comment'
+                            )}>{line || '\u00a0'}</span>
+                          </div>
+                        ))}
                       </div>
                       {verdict === 'DEPLOYED' ? <p className="sim-note">Simulated - would deploy to Base if all checks pass.</p> : null}
                     </div>
                   </div>
                 ) : (
-                  <p className="code-empty">Code generation skipped - safety check failed.</p>
+                  <p className="code-empty">Code generation skipped because safety checks did not pass.</p>
                 )}
               </section>
 
@@ -1392,13 +1490,21 @@ function AppShellInternal() {
                       const impressions = app.metrics?.impressions || 0;
                       const day = app.deployedAt ? Math.max(1, Math.floor((Date.now() - new Date(app.deployedAt).getTime()) / (1000 * 60 * 60 * 24))) : idx + 1;
                       const status = app.status || 'INCUBATING';
+                      const title = app.idea?.title || app.title || 'Untitled App';
+                      const monogram = title.split(' ').slice(0, 2).map((w: string) => w[0] || '').join('').toUpperCase() || 'AA';
+                      const statusClass = status.includes('INCUBATING') ? 'status-incubating' : status.includes('HANDED') ? 'status-deployed' : 'status-dropped';
 
                       return (
-                        <article key={app.id || `${idx}`} className="app-card tilt">
-                          <div className={classNames('top-strip', status.includes('INCUBATING') && 'strip-pass', status.includes('HANDED') && 'strip-accent', status.includes('DROP') && 'strip-block')} />
+                        <article key={app.id || `${idx}`} className={classNames('app-card tilt', statusClass)}>
                           <div className="app-head">
-                            <h4>{app.idea?.title || app.title || 'Untitled App'}</h4>
-                            <span className="template-badge">{status}</span>
+                            <div className="app-monogram">{monogram}</div>
+                            <div className="app-head-text">
+                              <h4>{title}</h4>
+                              <div className="app-status-row">
+                                {status.includes('INCUBATING') ? <span className="live-dot" /> : null}
+                                <span className="template-badge">{status}</span>
+                              </div>
+                            </div>
                           </div>
                           <p className="mono-time">Day {day} of 14</p>
 
@@ -1406,15 +1512,15 @@ function AppShellInternal() {
                             <div className="metric-stack">
                               <div>
                                 <div className="metric-label">{users} / 50 users</div>
-                                <div className="metric-track"><div className="metric-fill" style={{ width: `${Math.min(100, (users / 50) * 100)}%` }} /></div>
+                                <div className="metric-track"><div className="metric-fill" style={{ '--target': `${Math.min(100, (users / 50) * 100)}%` } as React.CSSProperties} /></div>
                               </div>
                               <div>
                                 <div className="metric-label">${revenue} / $10</div>
-                                <div className="metric-track"><div className="metric-fill warning" style={{ width: `${Math.min(100, (revenue / 10) * 100)}%` }} /></div>
+                                <div className="metric-track"><div className="metric-fill warning" style={{ '--target': `${Math.min(100, (revenue / 10) * 100)}%` } as React.CSSProperties} /></div>
                               </div>
                               <div>
                                 <div className="metric-label">{impressions} / 500 impressions</div>
-                                <div className="metric-track"><div className="metric-fill block" style={{ width: `${Math.min(100, (impressions / 500) * 100)}%` }} /></div>
+                                <div className="metric-track"><div className="metric-fill block" style={{ '--target': `${Math.min(100, (impressions / 500) * 100)}%` } as React.CSSProperties} /></div>
                               </div>
                             </div>
                           ) : status.includes('HANDED') ? (
@@ -1427,22 +1533,44 @@ function AppShellInternal() {
                     })}
                   </div>
                 </section>
-              ) : null}
+              ) : (
+                <div className="empty-slot">
+                  <div className="empty-icon"><Rocket size={32} strokeWidth={1} /></div>
+                  <p className="empty-title">No apps yet</p>
+                  <p className="empty-hint">When a cycle is deployed, the app appears here with live incubation metrics.</p>
+                </div>
+              )}
+              </div>
             </section>
           ) : null}
 
           {activeTab === 'stats' ? (
             <section className="stats-col">
+              <div className="focal-stat">
+                <div className="focal-number">{Math.round(countRuns)}</div>
+                <div className={classNames('focal-delta', cycleLog.length === 0 && 'neg')}>
+                  {cycleLog.length > 0 ? ('+' + String(cycleLog.length) + ' cycles run this week') : 'No cycles recorded yet'}
+                </div>
+              </div>
+
               <div className="stats-hero">
-                <div><span className="hero-label">Total Runs</span><strong>{Math.round(countRuns)}</strong></div>
                 <div><span className="hero-label">Deployed</span><strong>{Math.round(deployedCount)}</strong></div>
                 <div><span className="hero-label">Budget Used</span><strong>${budgetCount.toFixed(2)}</strong></div>
+                <div><span className="hero-label">Pass Rate</span><strong>{cycleLog.length ? `${Math.round(passPct)}%` : '—'}</strong></div>
               </div>
 
               <div className="pass-block">
                 <div className="pass-fill" style={{ width: `${passPct}%` }} />
               </div>
               <div className="pass-legend"><span>{passCount} PASS</span><span>{blockCount} BLOCK</span></div>
+
+              {cycleLog.length === 0 ? (
+                <div className="empty-slot">
+                  <div className="empty-icon"><BarChart3 size={32} strokeWidth={1} /></div>
+                  <p className="empty-title">No cycles run</p>
+                  <p className="empty-hint">Complete your first build cycle to populate analytics.</p>
+                </div>
+              ) : null}
 
               <div className="charts-grid">
                 <div className="panel glare">
@@ -1517,18 +1645,81 @@ function AppShellInternal() {
             </section>
           ) : null}
 
+          {activeTab === 'spatial' ? (
+            <section className="stats-col">
+              {/* ── Spatial Memory via Blockade Labs ── */}
+              <div className="panel glare" style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Globe size={16} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
+                    <h4 style={{ margin: 0 }}>Spatial Memory</h4>
+                  </div>
+                  <span className="badge neutral" style={{ fontSize: 10 }}>Blockade Labs</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-subtle)', marginBottom: 16, lineHeight: 1.6 }}>
+                  Each deployed app is encoded into a persistent 360° skybox — the agent's spatial long-term memory. Zones and agent markers are projected into the scene to surface risk, intent drift, and decision context at a glance.
+                </p>
+                {/* Top-level stats */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  {[
+                    { label: 'App Scenes', value: appEvolutionQuery.data?.ok ? String((appEvolutionQuery.data as any).count ?? 0) : '—' },
+                    { label: 'Total Markers', value: (() => {
+                      const appMarkers = ((appEvolutionQuery.data as any)?.atlas ?? []).reduce((s: number, m: any) => s + (m.agentMarkers?.length ?? 0), 0);
+                      return appMarkers > 0 ? String(appMarkers) : '—';
+                    })() },
+                  ].map(({ label, value }) => (
+                    <AtlasStat key={label} label={label} value={value} />
+                  ))}
+                </div>
+              </div>
+
+              {/* App Evolution Atlas */}
+              <div className="panel glare">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Rocket size={14} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
+                    App Evolution Atlas
+                  </h4>
+                  {appEvolutionQuery.isFetching && <Loader2 size={14} strokeWidth={1.5} className="animate-spin" style={{ color: 'var(--text-subtle)' }} />}
+                </div>
+                {appEvolutionQuery.isError ? (
+                  <p style={{ fontSize: 12, color: 'var(--danger)' }}>Failed to load app atlas.</p>
+                ) : appEvolutionQuery.isLoading ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {[0,1].map(i => <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] h-40 animate-pulse" />)}
+                  </div>
+                ) : (() => {
+                  const atlas: any[] = (appEvolutionQuery.data as any)?.atlas ?? [];
+                  return atlas.length === 0 ? (
+                    <div className="empty-slot">
+                      <div className="empty-icon"><Sparkles size={28} strokeWidth={1} /></div>
+                      <p className="empty-title">No app scenes yet</p>
+                      <p className="empty-hint">Deploy an app with a run cycle and the agent will generate a Blockade Labs scene encoding its spatial memory.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {atlas.map((mem: AppSpatialMemory) => (
+                        <AppSceneCard key={mem.appId} mem={mem} sevBadge={spatialSevBadge} />
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </section>
+          ) : null}
+
           {activeTab === 'settings' ? (
             <section className="stats-col">
               <div className="panel settings-panel">
-                <h4>Settings</h4>
+                <h4>Workspace Controls</h4>
                 <p>Wallet: {demoMode ? 'Demo wallet' : walletAddress ? truncateAddress(walletAddress) : 'Not connected'}</p>
                 <div className="settings-actions">
-                  <button className="ghost-btn" onClick={onThemeToggle}>{theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}</button>
-                  <button className="ghost-btn" onClick={() => { setDemoMode(false); onDisconnect(); }}>Reset Session</button>
+                  <button className="ghost-btn" onClick={onThemeToggle}>{theme === 'dark' ? 'Use light theme' : 'Use dark theme'}</button>
+                  <button className="ghost-btn" onClick={() => { setDemoMode(false); onDisconnect(); }}>Reset workspace</button>
                 </div>
                 <div className="mt-6">
-                  <h5 className="mb-3 text-sm font-semibold text-white">Industries / domains you&apos;re interested in</h5>
-                  <p className="mb-3 text-xs text-gray-500">Select the areas you want the agent to focus on when generating ideas.</p>
+                  <h5 className="mb-3 text-sm font-semibold text-white">Preferred industries</h5>
+                  <p className="mb-3 text-xs text-gray-500">Guide idea generation toward the markets you want this workspace to prioritize.</p>
                   <div className="flex flex-wrap gap-2">
                     {INDUSTRY_OPTIONS.map((industry) => (
                       <button
@@ -1560,31 +1751,43 @@ function AppShellInternal() {
 
       {onApp ? (
         <>
-          <div className="bubble-nav">
-            {[
-              { key: 'agent' as const, label: 'Agent', icon: Sparkles },
-              { key: 'stats' as const, label: 'Stats', icon: BarChart3 },
-              { key: 'settings' as const, label: 'Settings', icon: SlidersHorizontal },
+          <div className={classNames('bubble-nav', isRunning && 'is-running')} role="navigation" aria-label="App navigation">
+              {[
+              { key: 'agent' as const, label: 'Build', icon: Sparkles },
+              { key: 'stats' as const, label: 'Metrics', icon: BarChart3 },
+              { key: 'spatial' as const, label: 'Atlas', icon: Globe },
+              { key: 'settings' as const, label: 'Controls', icon: SlidersHorizontal },
             ].map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.key;
               return (
-                <button key={tab.key} className={classNames('bubble-tab', active && 'bubble-tab-active')} onClick={() => setActiveTab(tab.key)}>
+                <button key={tab.key} className={classNames('bubble-tab', active && 'bubble-tab-active')} onClick={() => setActiveTab(tab.key)} aria-current={active ? 'page' : undefined}>
                   <Icon size={16} strokeWidth={1.5} />
-                  {active ? <span className="bubble-label">{tab.label}</span> : null}
+                  <span className={classNames('bubble-label', active && 'bubble-label-active')}>{tab.label}</span>
                   {active ? <span className="bubble-dot" /> : null}
                 </button>
               );
             })}
           </div>
 
-          <div className={classNames('agent-bubble', bubbleOpen && 'agent-bubble-open')}>
-            <button className="agent-fab" onClick={() => setBubbleOpen((v) => !v)}>
-              <span className="ring" />
-              <span className="ring ring-delay" />
-              <Sparkles size={20} strokeWidth={1.5} />
+          <div className={classNames('agent-bubble', bubbleOpen && 'agent-bubble-open', isRunning && 'is-running')}>
+            <button
+              className={classNames('agent-fab', outcomeFlash && `outcome-${outcomeFlash}`)}
+              onClick={() => setBubbleOpen((v) => !v)}
+              aria-label={
+                isRunning ? 'Agent running' :
+                verdict === 'DEPLOYED' ? 'Agent — last cycle deployed' :
+                verdict === 'BLOCKED' ? 'Agent — last cycle blocked' :
+                'Agent status'
+              }
+            >
+              {isRunning ? null : <span className="ring" />}
+              {isRunning ? null : <span className="ring ring-delay" />}
+              {isRunning
+                ? <Loader2 className="spin-slow" size={20} strokeWidth={1.5} />
+                : <Sparkles size={20} strokeWidth={1.5} />}
             </button>
-            <div className="agent-info-pill">{cycleLog.length} runs · ${totalBudgetUsed.toFixed(2)} used</div>
+            <div className="agent-info-pill">{cycleLog.length} cycles · ${totalBudgetUsed.toFixed(2)} used</div>
             <div className="agent-panel">
               <div className="agent-last">
                 {(cycleLog || []).slice(0, 3).map((c) => (
@@ -1602,111 +1805,217 @@ function AppShellInternal() {
         </>
       ) : null}
 
-      <div className="toast-stack">
+      <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={classNames('toast', `toast-${toast.tone}`)}>
+          <div key={toast.id} className={classNames('toast', `toast-${toast.tone}`)} onClick={() => !toast.persistent && setToasts((prev) => prev.filter((t) => t.id !== toast.id))}>
             <div>{toast.text}</div>
             {toast.persistent ? (
               <button className="icon-ghost" onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}>
                 <XCircle size={14} strokeWidth={1.5} />
               </button>
-            ) : null}
+            ) : (
+              <div className="toast-timer" style={{ animationDuration: `${toast.ttl}ms` }} />
+            )}
           </div>
         ))}
       </div>
 
       <style jsx global>{`
         :root {
-          --bg: #09090b;
-          --surface: #0f0f12;
-          --surface-2: #161619;
-          --surface-3: #1e1e23;
-          --border: #27272c;
-          --border-muted: #1c1c21;
-          --text: #f5f5f3;
-          --text-muted: #9b9b98;
-          --text-subtle: #5a5a57;
-          --accent: #ff6d00;
-          --accent-dim: #cc5700;
-          --accent-bright: #ff8c33;
-          --accent-glow: rgba(255, 109, 0, 0.22);
-          --accent-glow-sm: rgba(255, 109, 0, 0.12);
-          --accent-glow-xs: rgba(255, 109, 0, 0.06);
-          --pass: #22c55e;
-          --pass-muted: rgba(34, 197, 94, 0.12);
-          --block: #ef4444;
-          --block-muted: rgba(239, 68, 68, 0.12);
-          --warning: #f59e0b;
-          --warning-muted: rgba(245, 158, 11, 0.12);
+          /* ── Surfaces (darker, glassy base) ───────────────── */
+          --bg: #050508;
+          --surface: #0c0c10;
+          --surface-2: #121218;
+          --surface-3: #18181e;
+          --surface-4: #1e1e26;
+
+          /* ── Glass tokens (Apple-style blur) ────────────────── */
+          --glass-bg: rgba(20, 20, 26, 0.68);
+          --glass-bg-light: rgba(255, 255, 255, 0.035);
+          --glass-border: rgba(255, 255, 255, 0.07);
+          --glass-border-strong: rgba(255, 255, 255, 0.12);
+          --glass-shine: rgba(255, 255, 255, 0.045);
+          --glass-blur: saturate(180%) blur(28px);
+
+          /* ── Borders ──────────────────────────────────────── */
+          --border: rgba(255, 255, 255, 0.07);
+          --border-muted: rgba(255, 255, 255, 0.04);
+          --border-strong: rgba(255, 255, 255, 0.12);
+          --border-accent: rgba(255, 122, 36, 0.45);
+          --border-pass: rgba(52, 199, 89, 0.35);
+          --border-block: rgba(255, 69, 58, 0.35);
+
+          /* ── Typography (clear hierarchy) ──────────────────── */
+          --text: #f2f2f0;
+          --text-muted: #9a9a98;
+          --text-subtle: #5a5a58;
+
+          /* ── Accent (orange) ──────────────────────────────── */
+          --accent: #ff7a24;
+          --accent-dim: #d96618;
+          --accent-bright: #ff9542;
+          --accent-glow: rgba(255, 122, 36, 0.22);
+          --accent-glow-sm: rgba(255, 122, 36, 0.12);
+          --accent-glow-xs: rgba(255, 122, 36, 0.06);
+
+          /* ── Semantic ─────────────────────────────────────── */
+          --pass: #34c759;
+          --pass-muted: rgba(52, 199, 89, 0.12);
+          --block: #ff453a;
+          --block-muted: rgba(255, 69, 58, 0.12);
+          --warning: #ff9f0a;
+          --warning-muted: rgba(255, 159, 10, 0.12);
+
+          /* ── Brand ────────────────────────────────────────── */
           --base-blue: #0052ff;
           --wallet-blue: #3b99fc;
           --wallet-fox: #f6851b;
           --social: #60a5fa;
           --mini: #818cf8;
+
+          /* ── Elevation (softer, glassy) ──────────────────── */
+          --shadow-1: 0 1px 3px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.04);
+          --shadow-2: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+          --shadow-3: 0 16px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
+          --shadow-4: 0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+
+          /* ── Motion ───────────────────────────────────────── */
+          --dur-instant: 80ms;
+          --dur-fast: 150ms;
+          --dur-normal: 280ms;
+          --dur-slow: 400ms;
+          --dur-crawl: 700ms;
+          --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+          --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+          --ease-sharp: cubic-bezier(0.2, 0, 0, 1);
+
+          /* ── Spacing ──────────────────────────────────────── */
+          --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+          --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+          --sp-12: 48px; --sp-16: 64px;
+
+          /* ── Radii ────────────────────────────────────────── */
+          --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
         }
 
         html[data-theme='light'] {
-          --bg: #fafaf8;
-          --surface: #ffffff;
-          --surface-2: #f3f3f0;
-          --surface-3: #eaeae6;
-          --border: #e0e0dc;
-          --border-muted: #ebebeb;
-          --text: #0c0c0a;
-          --text-muted: #525250;
-          --text-subtle: #a0a09c;
+          --bg: #f0f0ed;
+          --surface: rgba(255, 255, 255, 0.82);
+          --surface-2: rgba(248, 248, 246, 0.9);
+          --surface-3: rgba(238, 238, 234, 0.95);
+          --surface-4: #e2e2dd;
+          --glass-bg: rgba(255, 255, 255, 0.68);
+          --glass-bg-light: rgba(0, 0, 0, 0.03);
+          --glass-border: rgba(0, 0, 0, 0.08);
+          --glass-border-strong: rgba(0, 0, 0, 0.14);
+          --glass-shine: rgba(255, 255, 255, 0.7);
+          --border: rgba(0, 0, 0, 0.09);
+          --border-muted: rgba(0, 0, 0, 0.05);
+          --border-strong: rgba(0, 0, 0, 0.16);
+          --text: #0d0d0b;
+          --text-muted: #3a3a38;
+          --text-subtle: #7a7a77;
           --accent: #e55c00;
           --accent-dim: #c24a00;
           --accent-bright: #ff6d00;
-          --accent-glow: rgba(229, 92, 0, 0.18);
-          --accent-glow-sm: rgba(229, 92, 0, 0.1);
-          --accent-glow-xs: rgba(229, 92, 0, 0.05);
+          --accent-glow: rgba(229, 92, 0, 0.2);
+          --accent-glow-sm: rgba(229, 92, 0, 0.11);
+          --accent-glow-xs: rgba(229, 92, 0, 0.06);
           --pass: #16a34a;
-          --pass-muted: rgba(22, 163, 74, 0.1);
+          --pass-muted: rgba(22, 163, 74, 0.11);
           --block: #dc2626;
-          --block-muted: rgba(220, 38, 38, 0.08);
+          --block-muted: rgba(220, 38, 38, 0.09);
           --warning: #d97706;
-          --warning-muted: rgba(217, 119, 6, 0.08);
-          --base-blue: #0052ff;
-          --wallet-blue: #3b99fc;
-          --wallet-fox: #f6851b;
-          --social: #60a5fa;
-          --mini: #818cf8;
+          --warning-muted: rgba(217, 119, 6, 0.09);
+          --shadow-1: 0 1px 4px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.55);
+          --shadow-2: 0 4px 18px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.60);
+          --shadow-3: 0 10px 36px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.65);
+          --shadow-4: 0 24px 70px rgba(0,0,0,0.16), 0 8px 18px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.68);
         }
 
         * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-dm); }
+        html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-dm); font-size: 15px; line-height: 1.55; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
         button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 
         .app-root { min-height: 100vh; position: relative; background: var(--bg); color: var(--text); overflow-x: hidden; }
+        .app-root.outcome-flash::after {
+          content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 500;
+          animation: bg-flash 600ms ease-out 1 forwards;
+        }
+        .app-root.outcome-flash-pass::after { background: rgba(34, 197, 94, 0.05); }
+        .app-root.outcome-flash-block::after { background: rgba(239, 68, 68, 0.05); }
+        @keyframes bg-flash { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
         .bars-canvas, .flow-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
 
         .top-bar {
           height: 56px; position: fixed; top: 0; left: 0; right: 0; z-index: 50;
           display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 24px;
+          background: rgba(12, 12, 16, 0.72);
+          backdrop-filter: saturate(180%) blur(24px);
+          -webkit-backdrop-filter: saturate(180%) blur(24px);
+          border-bottom: 1px solid var(--glass-border);
+          box-shadow: 0 1px 0 rgba(255,255,255,0.05), 0 4px 24px rgba(0,0,0,0.25);
         }
-        .brand-small { font-family: var(--font-syne); font-weight: 700; font-size: 15px; }
+        .brand-small {
+          font-family: var(--font-syne); font-weight: 700; font-size: 15px;
+          letter-spacing: -0.02em;
+          background: linear-gradient(135deg, var(--text) 35%, var(--text-muted));
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
         .top-actions { justify-self: end; display: flex; gap: 8px; align-items: center; }
-        .net-pill { justify-self: center; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+        .net-pill {
+          justify-self: center; display: flex; align-items: center; gap: 7px; font-size: 12px;
+          color: var(--text-muted); background: var(--glass-bg-light);
+          border: 1px solid var(--glass-border); border-radius: 99px; padding: 5px 12px;
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          letter-spacing: 0.01em;
+        }
         .live-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--pass); animation: pulse-dot 2s infinite; }
         .live-dot-warning { background: var(--warning); }
         .live-dot-block { background: var(--block); }
         @keyframes pulse-dot { 0%,100%{transform:scale(1);opacity:.6} 50%{transform:scale(1.4);opacity:1} }
+        .net-pill-testnet { color: var(--warning, #f59e0b); border-color: color-mix(in srgb, var(--warning, #f59e0b) 35%, transparent); }
+        .net-pill-wrong   { color: var(--block, #ef4444);   border-color: color-mix(in srgb, var(--block, #ef4444) 35%, transparent); }
+
+        /* Neural thread */
+        .neural-thread {
+          position: fixed; top: 56px; left: 0; height: 1px; width: 0%;
+          background: linear-gradient(90deg, transparent, var(--accent), var(--accent-bright), var(--accent), transparent);
+          z-index: 49; opacity: 0; transition: opacity var(--dur-fast) ease;
+        }
+        .neural-thread.active {
+          opacity: 1; animation: thread-sweep 1.8s linear infinite;
+        }
+        @keyframes thread-sweep {
+          0%   { width: 0%;  left: 0%; }
+          50%  { width: 40%; left: 30%; }
+          100% { width: 0%;  left: 100%; }
+        }
 
         .icon-ghost, .ghost-btn {
-          height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+          height: 34px; border-radius: 9px;
+          border: 1px solid var(--glass-border); background: var(--glass-bg-light);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
           display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px;
-          transition: transform 150ms ease, background-color 150ms ease;
+          transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+          box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
         }
         .icon-ghost { width: 34px; padding: 0; }
-        .icon-ghost:hover, .ghost-btn:hover { background: var(--surface-3); }
+        .icon-ghost:hover, .ghost-btn:hover { background: var(--glass-border); border-color: var(--glass-border-strong); }
 
-        .wallet-chip { height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); padding: 0 10px; font-family: var(--font-jet); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
-        .demo-badge { background: var(--warning-muted); border: 1px solid var(--warning); color: var(--warning); border-radius: 8px; padding: 5px 8px; font-family: var(--font-jet); font-size: 11px; }
+        .wallet-chip {
+          height: 34px; border-radius: 9px; border: 1px solid var(--glass-border);
+          background: var(--glass-bg-light); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          padding: 0 10px; font-family: var(--font-jet); font-size: 12px; display: inline-flex; align-items: center; gap: 6px;
+          letter-spacing: 0.02em;
+        }
+        .demo-badge { background: var(--warning-muted); border: 1px solid rgba(245, 158, 11, 0.35); color: var(--warning); border-radius: 8px; padding: 5px 8px; font-family: var(--font-jet); font-size: 11px; letter-spacing: 0.04em; }
 
         .offline-banner {
           position: fixed; top: 56px; left: 0; right: 0; height: 40px; z-index: 45;
-          background: var(--block-muted); border-bottom: 1px solid var(--block);
+          background: rgba(239, 68, 68, 0.12);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          border-bottom: 1px solid rgba(239, 68, 68, 0.25);
           display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--block); font-size: 13px;
           animation: slide-down 200ms ease;
         }
@@ -1715,23 +2024,27 @@ function AppShellInternal() {
         .landing-main { position: relative; z-index: 10; min-height: 100vh; display: flex; align-items: center; }
         .landing-text { width: min(520px, 100%); margin-left: clamp(24px, 7vw, 72px); }
 
-        .wordmark { font-family: var(--font-syne); font-weight: 800; font-size: clamp(48px, 7vw, 76px); letter-spacing: -0.025em; line-height: 1; margin: 0; position: relative; display: inline-block; }
-        .wordmark::after { content: ''; position: absolute; left: 0; bottom: -6px; height: 2px; width: 0%; background: var(--accent); transition: width 650ms ease; }
+        .wordmark { font-family: var(--font-syne); font-weight: 800; font-size: clamp(52px, 8vw, 80px); letter-spacing: -0.035em; line-height: 1.05; margin: 0; position: relative; display: inline-block; }
+        .wordmark::after { content: ''; position: absolute; left: 0; bottom: -8px; height: 3px; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-bright)); border-radius: 2px; transition: width 700ms var(--ease-standard); }
         .wordmark-ready::after { width: 100%; }
 
-        .tagline { margin-top: 16px; font-family: var(--font-syne); font-size: clamp(28px, 4vw, 38px); font-weight: 700; letter-spacing: -0.01em; display: grid; gap: 4px; }
+        .tagline { margin-top: 20px; font-family: var(--font-syne); font-size: clamp(28px, 4vw, 38px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; display: grid; gap: 6px; color: var(--text); }
         .split span { opacity: 0; transform: translateY(18px); animation: split-up 380ms ease forwards; }
         .split span:nth-child(1) { animation-delay: 1200ms; }
         .split span:nth-child(2) { animation-delay: 1260ms; }
         @keyframes split-up { to { opacity: 1; transform: translateY(0); } }
 
-        .desc { margin-top: 20px; font-size: 17px; color: var(--text-muted); opacity: 0; animation: fade-in 300ms ease 1650ms forwards; }
+        .desc { margin-top: 24px; font-size: 17px; color: var(--text-muted); line-height: 1.6; letter-spacing: 0.01em; opacity: 0; animation: fade-in 300ms ease 1650ms forwards; }
         @keyframes fade-in { to { opacity: 1; } }
 
         .feature-pills { margin-top: 24px; display: grid; gap: 10px; }
         .pill-row {
-          width: fit-content; display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 80%, transparent);
-          border-radius: 99px; padding: 8px 16px; font-size: 14px; color: var(--text-muted); backdrop-filter: blur(8px); opacity: 0; transform: translateY(12px); animation: pill-up 280ms ease forwards;
+          width: fit-content; display: inline-flex; gap: 8px; align-items: center;
+          border: 1px solid var(--glass-border); background: var(--glass-bg);
+          border-radius: 99px; padding: 9px 17px; font-size: 14px; color: var(--text-muted);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.2);
+          opacity: 0; transform: translateY(12px); animation: pill-up 280ms ease forwards;
         }
         .pill-row:nth-child(1) { animation-delay: 1800ms; color: var(--text-muted); }
         .pill-row:nth-child(2) { animation-delay: 1890ms; }
@@ -1743,19 +2056,26 @@ function AppShellInternal() {
         .connect-wrap { margin-top: 32px; width: min(280px, 100%); }
         .cta-btn {
           position: relative;
-          width: 100%; height: 52px; border-radius: 10px; background: var(--accent); color: #fff;
+          width: 100%; height: 52px; border-radius: 12px;
+          background: linear-gradient(160deg, var(--accent-bright) 0%, var(--accent) 60%, var(--accent-dim) 100%);
+          color: #fff;
           display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-          font-family: var(--font-syne); font-size: 15px; font-weight: 600;
-          transition: transform 120ms ease, background-color 250ms ease, box-shadow 250ms ease;
+          font-family: var(--font-syne); font-size: 15px; font-weight: 600; letter-spacing: 0.01em;
+          transition: transform 120ms ease, filter 250ms ease, box-shadow 250ms ease;
+          box-shadow: 0 2px 14px rgba(255,109,0,0.30), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.15);
         }
-        .cta-btn:hover { background: var(--accent-dim); box-shadow: 0 0 0 8px var(--accent-glow); }
-        .cta-btn:active { transform: scale(0.96); }
-        .cta-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+        .cta-btn:hover { filter: brightness(1.07); box-shadow: 0 4px 24px rgba(255,109,0,0.42), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.15); }
+        .cta-btn:active { transform: scale(0.97); filter: brightness(0.95); }
+        .cta-btn:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; }
 
-        .connector-list { margin-top: 8px; max-height: 0; opacity: 0; overflow: hidden; border: 1px solid transparent; border-radius: 10px; background: var(--surface); transition: max-height 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 280ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .connector-list-open { max-height: 260px; opacity: 1; border-color: var(--border); padding: 8px; }
-        .connector-item { width: 100%; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 12px; font-size: 14px; color: var(--text); }
-        .connector-item:hover { background: var(--surface-3); }
+        .connector-list {
+          margin-top: 8px; max-height: 0; opacity: 0; overflow: hidden; border: 1px solid transparent;
+          border-radius: 13px; background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+          transition: max-height 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .connector-list-open { max-height: 260px; opacity: 1; border-color: var(--glass-border); padding: 8px; box-shadow: var(--shadow-3); }
+        .connector-item { width: 100%; border-radius: 9px; display: flex; align-items: center; gap: 10px; padding: 12px; font-size: 14px; color: var(--text); }
+        .connector-item:hover { background: var(--glass-bg-light); }
         .connector-icon { width: 18px; text-align: center; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
         .wallet-svg { display: block; }
         .wallet-svg.coinbase, .wallet-svg.wc { color: var(--wallet-blue); }
@@ -1769,60 +2089,99 @@ function AppShellInternal() {
         .landing-bottom {
           position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; height: 48px; padding: 0 24px;
           display: flex; align-items: center; justify-content: space-between;
+          background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          border-top: 1px solid var(--glass-border);
         }
         .subtle-line { font-size: 11px; color: var(--text-subtle); display: inline-flex; align-items: center; gap: 8px; }
         .base-box { width: 16px; height: 16px; background: var(--base-blue); display: inline-block; }
 
-        .app-main { position: relative; z-index: 10; padding: 80px 16px 140px; }
+        .app-main { position: relative; z-index: 10; padding: 80px 16px 140px; max-width: 1600px; margin: 0 auto; }
+        .agent-layout { width: 100%; max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
         .agent-col { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 16px; }
-        .stats-col { width: min(860px, 100%); margin: 0 auto; display: grid; gap: 16px; padding-bottom: 120px; }
-        .center-head { text-align: center; display: grid; gap: 8px; margin-bottom: 4px; }
-        .vision-title { font-family: var(--font-syne); font-size: clamp(26px, 4vw, 30px); margin: 0; transition: filter 280ms ease, opacity 280ms ease; }
-        .vision-title-blur { filter: blur(0.8px); opacity: 0.45; }
-        .center-head p { margin: 0; color: var(--text-muted); font-size: 16px; }
+        .stats-col { width: min(980px, 100%); margin: 0 auto; display: grid; gap: 16px; padding-bottom: 120px; }
+        .center-head { text-align: left; display: grid; gap: 8px; margin-bottom: 4px; }
+        .vision-title { font-family: var(--font-syne); font-size: clamp(24px, 3.8vw, 29px); margin: 0; letter-spacing: -0.02em; transition: filter 280ms ease, opacity 280ms ease; }
+        .vision-title-blur { filter: blur(0.8px); opacity: 0.4; }
+        .center-head p { margin: 0; color: var(--text-muted); font-size: 15px; line-height: 1.55; }
 
         .panel {
-          background: color-mix(in srgb, var(--surface) 72%, transparent);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          backdrop-filter: blur(16px);
+          background: var(--glass-bg);
+          border: 1px solid var(--glass-border);
+          border-radius: 18px;
+          backdrop-filter: var(--glass-blur);
+          -webkit-backdrop-filter: var(--glass-blur);
+          box-shadow: var(--shadow-2);
+          position: relative;
+        }
+        /* Apple-style inner top shine on glass panels */
+        .panel::after {
+          content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+          background: linear-gradient(180deg, var(--glass-shine) 0%, transparent 40%);
+          mask-image: linear-gradient(180deg, black 0%, transparent 100%);
+          -webkit-mask-image: linear-gradient(180deg, black 0%, transparent 100%);
+          height: 1px; top: 0; background: var(--glass-border-strong); border-radius: 18px 18px 0 0; z-index: 1;
         }
 
         .vision-panel {
+          --fill-pct: 0%;
           padding: 24px;
-          border-top: 3px solid var(--accent);
-          border-color: color-mix(in srgb, var(--border) calc(100% - (var(--prox, 0) * 60%)), var(--accent));
-          box-shadow: 0 0 0 calc(var(--prox, 0) * 4px) rgba(255, 109, 0, calc(var(--prox, 0) * 0.08));
-          transition: box-shadow 180ms ease;
+          position: relative;
+          overflow: hidden;
+          border-color: color-mix(in srgb, var(--glass-border) calc(100% - (var(--prox, 0) * 80%)), var(--accent));
+          box-shadow: var(--shadow-2), 0 0 0 calc(var(--prox, 0) * 5px) rgba(255, 109, 0, calc(var(--prox, 0) * 0.1));
+          transition: box-shadow 180ms ease, border-color 180ms ease;
         }
+        .vision-panel::before {
+          content: ''; position: absolute; top: 0; left: 0;
+          height: 3px; width: var(--fill-pct);
+          background: var(--accent); transition: width 200ms ease; z-index: 1;
+        }
+        .vision-panel::after {
+          content: ''; position: absolute; left: 0; right: 0;
+          height: 2px; background: linear-gradient(90deg, transparent, rgba(255,109,0,0.05), transparent);
+          animation: scan 3s linear infinite paused; top: 0; z-index: 0;
+        }
+        .vision-panel:focus-within::after { animation-play-state: running; }
+        @keyframes scan { from { transform: translateY(0); } to { transform: translateY(100%); } }
 
         .vision-input {
-          width: 100%; min-height: 160px; resize: none; border: 0; outline: none; border-radius: 10px;
-          background: var(--surface-2); color: var(--text); padding: 16px; font-size: 16px; line-height: 1.7; font-family: var(--font-dm);
+          width: 100%; min-height: 160px; resize: none; border: 0; outline: none; border-radius: 12px;
+          background: rgba(0, 0, 0, 0.22); color: var(--text);
+          padding: 18px; font-size: 16px; line-height: 1.75; font-family: var(--font-dm);
+          box-shadow: inset 0 1px 3px rgba(0,0,0,0.24), inset 0 0 0 1px rgba(255,255,255,0.04);
+          transition: box-shadow 200ms ease;
         }
-        .vision-input::placeholder { color: var(--text-subtle); font-style: italic; font-size: 15px; }
+        .vision-input:focus { box-shadow: inset 0 1px 3px rgba(0,0,0,0.28), inset 0 0 0 1px rgba(255,109,0,0.28); }
+        .vision-input::placeholder { color: var(--text-subtle); font-size: 15px; line-height: 1.6; }
+        html[data-theme='light'] .vision-input { background: rgba(0,0,0,0.04); box-shadow: inset 0 1px 3px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(0,0,0,0.06); }
 
         .quick-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .quick-row > span { color: var(--text-subtle); font-size: 11px; }
         .category-pill {
-          border: 1px solid var(--border); border-radius: 99px; padding: 6px 12px; font-size: 12px; color: var(--text-muted); background: var(--surface-3);
-          transition: background-color 150ms ease, color 150ms ease;
+          border: 1px solid var(--glass-border); border-radius: 99px; padding: 6px 12px; font-size: 12px;
+          color: var(--text-muted); background: var(--glass-bg);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
         }
-        .category-pill:hover { background: var(--accent); color: #fff; }
+        .category-pill:hover { background: var(--accent); color: #fff; border-color: transparent; }
 
         .char-count { margin-top: 10px; text-align: right; font-family: var(--font-jet); font-size: 11px; color: var(--text-subtle); }
         .char-warning { color: var(--warning); }
         .char-danger { color: var(--block); }
 
         .run-btn {
-          width: 100%; height: 56px; border-radius: 12px; background: var(--accent); color: #fff;
-          display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-family: var(--font-syne); font-size: 16px; font-weight: 600;
-          transition: transform 120ms ease, background-color 250ms ease, box-shadow 250ms ease;
+          width: 100%; height: 56px; border-radius: 14px;
+          background: linear-gradient(160deg, var(--accent-bright) 0%, var(--accent) 55%, var(--accent-dim) 100%);
+          color: #fff;
+          display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+          font-family: var(--font-syne); font-size: 16px; font-weight: 600; letter-spacing: 0.01em;
+          transition: transform 120ms ease, filter 250ms ease, box-shadow 250ms ease;
           position: relative; overflow: hidden;
+          box-shadow: 0 2px 16px rgba(255,109,0,0.32), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.15);
         }
-        .run-btn:hover:not(:disabled) { background: var(--accent-dim); box-shadow: 0 0 0 10px var(--accent-glow); }
-        .run-btn:active:not(:disabled) { transform: scale(0.96); }
-        .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .run-btn:hover:not(:disabled) { filter: brightness(1.07); box-shadow: 0 4px 28px rgba(255,109,0,0.44), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.15); }
+        .run-btn:active:not(:disabled) { transform: scale(0.97); filter: brightness(0.95); }
+        .run-btn:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; }
 
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -1843,16 +2202,36 @@ function AppShellInternal() {
         .panel-show { max-height: 2200px; opacity: 1; padding: 20px; }
 
         .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .panel-head span:first-child { font-size: 10px; letter-spacing: 0.1em; color: var(--text-subtle); font-weight: 500; }
-        .mono-accent { color: var(--accent); font-family: var(--font-jet); font-size: 11px; }
+        .panel-head span:first-child { font-size: 10px; letter-spacing: 0.14em; color: var(--text-subtle); font-weight: 600; text-transform: uppercase; }
+        .mono-accent { color: var(--accent); font-family: var(--font-jet); font-size: 11px; letter-spacing: 0.04em; }
 
-        .stage-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-        .stage-item { text-align: center; position: relative; }
-        .stage-node { width: 44px; height: 44px; border-radius: 99px; margin: 0 auto; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface-3); color: var(--text-subtle); }
-        .stage-pending { background: var(--surface-3); color: var(--text-subtle); }
-        .stage-active { border: 1.5px solid var(--accent); color: var(--accent); }
-        .stage-complete { background: var(--pass-muted); color: var(--pass); border-color: color-mix(in srgb, var(--pass) 50%, var(--border)); }
-        .stage-failed { background: var(--block-muted); color: var(--block); border-color: color-mix(in srgb, var(--block) 50%, var(--border)); }
+        .stage-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; position: relative; }
+        .stage-item { text-align: center; position: relative; z-index: 2; }
+        .stage-connector-bg {
+          position: absolute; top: 22px; left: 10%; right: 10%;
+          height: 1px; background: var(--border); z-index: 0;
+        }
+        .stage-connector-fill {
+          position: absolute; top: 22px; left: 10%;
+          height: 1px; background: var(--accent); width: 0%;
+          transition: width 400ms ease; z-index: 1;
+        }
+        .stage-node {
+          width: 44px; height: 44px; border-radius: 99px; margin: 0 auto; display: grid; place-items: center;
+          border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-subtle); position: relative;
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+        }
+        .stage-pending { background: var(--glass-bg); color: var(--text-subtle); }
+        .stage-active { border: 1.5px solid var(--accent); color: var(--accent); background: rgba(255,109,0,0.08); }
+        .stage-complete { background: rgba(34,197,94,0.12); color: var(--pass); border-color: rgba(34,197,94,0.3); }
+        .stage-failed { background: rgba(239,68,68,0.12); color: var(--block); border-color: rgba(239,68,68,0.3); animation: node-shake 300ms linear 1; }
+        @keyframes node-shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-3px)} 40%{transform:translateX(3px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(2px)} }
+        .stage-pulse {
+          position: absolute; inset: -4px; border-radius: 99px;
+          border: 1.5px solid var(--accent); animation: stage-pulse 1.2s ease-out infinite;
+        }
+        @keyframes stage-pulse { from { transform: scale(1); opacity: 0.5; } to { transform: scale(2); opacity: 0; } }
         .electric { position: relative; background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box, conic-gradient(from var(--angle), var(--accent), transparent 40%, var(--accent)) border-box; border: 1.5px solid transparent; animation: spin-angle 1.4s linear infinite; }
         @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
         @keyframes spin-angle { to { --angle: 360deg; } }
@@ -1860,28 +2239,45 @@ function AppShellInternal() {
         .stage-name { margin-top: 8px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-subtle); }
         .stage-log { margin-top: 4px; font-size: 11px; font-family: var(--font-jet); color: var(--text-muted); min-height: 14px; }
 
-        .result-word { text-align: center; font-family: var(--font-syne); font-size: clamp(46px, 8vw, 60px); font-weight: 800; padding: 32px 0; position: relative; }
-        .result-word::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 22px; height: 2px; width: 0%; transition: width 500ms ease; background: currentColor; }
+        .result-word { text-align: center; font-family: var(--font-syne); font-size: clamp(42px, 7.5vw, 58px); font-weight: 800; letter-spacing: -0.03em; padding: 32px 0; position: relative; }
+        .result-word::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 22px; height: 2px; width: 0%; transition: width 500ms ease; background: currentColor; border-radius: 2px; }
         .result-pass { color: var(--pass); }
         .result-block { color: var(--block); }
         .result-warning { color: var(--warning); }
         .result-pass::after, .result-block::after, .result-warning::after { width: 60%; }
 
         .output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .output-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; overflow: hidden; }
+        .output-card {
+          background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 14px; padding: 18px;
+          border-left-width: 3px;
+          position: relative; overflow: hidden;
+          box-shadow: var(--shadow-1);
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          opacity: 0; transform: translateY(12px);
+        }
+        .panel-show .output-card {
+          animation: card-rise 320ms var(--ease-spring) forwards;
+        }
+        .panel-show .output-card:nth-child(1) { animation-delay: 40ms; }
+        .panel-show .output-card:nth-child(2) { animation-delay: 100ms; }
+        .panel-show .output-card:nth-child(3) { animation-delay: 160ms; }
+        .panel-show .output-card:nth-child(4) { animation-delay: 220ms; }
+        @keyframes card-rise { to { opacity: 1; transform: translateY(0); } }
+        .output-card.card-pass { box-shadow: 0 0 0 1px rgba(34,197,94,0.2), 0 4px 28px rgba(34,197,94,0.08); border-color: var(--border-pass); border-left-color: var(--pass); }
+        .output-card.card-block { box-shadow: 0 0 0 1px rgba(239,68,68,0.22), 0 4px 28px rgba(239,68,68,0.1); border-color: var(--border-block); border-left-color: var(--block); }
         .output-card::before, .panel.glare::before {
           content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 200ms ease;
           background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255, 255, 255, 0.07) 0%, transparent 65%);
         }
         .output-card:hover::before, .panel.glare:hover::before { opacity: 1; }
 
-        .output-card header { font-size: 10px; letter-spacing: 0.1em; color: var(--text-subtle); display: inline-flex; align-items: center; gap: 6px; }
-        .output-card h4 { margin: 12px 0 6px; font-family: var(--font-syne); font-size: 18px; }
-        .output-card p { margin: 8px 0 0; font-size: 14px; color: var(--text-muted); }
+        .output-card header { font-size: 10px; letter-spacing: 0.12em; color: var(--text-subtle); display: inline-flex; align-items: center; gap: 6px; text-transform: uppercase; font-weight: 500; }
+        .output-card h4 { margin: 12px 0 6px; font-family: var(--font-syne); font-size: 17px; letter-spacing: -0.01em; }
+        .output-card p { margin: 8px 0 0; font-size: 14px; color: var(--text-muted); line-height: 1.6; }
 
-        .template-badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; background: var(--surface-3); font-size: 11px; font-family: var(--font-jet); color: var(--text-muted); }
+        .template-badge { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 7px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); font-size: 11px; font-family: var(--font-jet); color: var(--text-muted); letter-spacing: 0.03em; }
         .chip-wrap { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-        .cap-chip { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 11px; background: var(--surface-3); color: var(--text-muted); }
+        .cap-chip { border: 1px solid var(--glass-border); border-radius: 7px; padding: 4px 9px; font-size: 11px; background: rgba(255,255,255,0.04); color: var(--text-muted); }
 
         .safety-pass { margin-top: 8px; color: var(--pass); font-family: var(--font-syne); font-size: 20px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
         .safety-block { margin-top: 8px; color: var(--block); font-family: var(--font-syne); font-size: 20px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
@@ -1903,11 +2299,36 @@ function AppShellInternal() {
         .code-head span { display: inline-flex; align-items: center; gap: 6px; }
         .head-right { gap: 10px; }
         .rot { transform: rotate(180deg); transition: transform 240ms ease; }
-        .code-panel { border: 1px solid var(--border); border-radius: 12px; margin-top: 8px; max-height: 0; overflow: hidden; transition: max-height 240ms ease; background: var(--surface-2); }
+        .code-panel {
+          border: 1px solid var(--glass-border); border-radius: 14px; margin-top: 8px; max-height: 0; overflow: hidden;
+          transition: max-height 240ms ease;
+          background: rgba(5,5,8,0.72); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        }
         .code-panel-open { max-height: 480px; }
+        /* IDE-style code viewer */
+        .code-viewer { background: rgba(5,5,8,0.85); backdrop-filter: blur(12px); border-radius: 12px; overflow: hidden; font-family: var(--font-jet); font-size: 12px; line-height: 1.6; }
+        .code-title-bar {
+          height: 36px; background: rgba(255,255,255,0.04); border-bottom: 1px solid rgba(255,255,255,0.07);
+          display: flex; align-items: center; padding: 0 14px; gap: 8px;
+        }
+        .code-dot { width: 10px; height: 10px; border-radius: 99px; }
+        .code-dot-r { background: #ff5f56; }
+        .code-dot-y { background: #ffbd2e; }
+        .code-dot-g { background: #27c93f; }
+        .code-lang-badge {
+          margin-left: auto; font-family: var(--font-jet); font-size: 10px; color: var(--text-subtle);
+          letter-spacing: 0.08em; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+        }
+        .code-body { max-height: 360px; overflow-y: auto; padding: 12px 0; }
+        .code-body:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .code-line { display: grid; grid-template-columns: 40px 1fr; min-height: 20px; }
+        .code-line:hover { background: rgba(255,255,255,0.03); }
+        .line-num { color: var(--text-subtle); text-align: right; padding-right: 16px; user-select: none; font-size: 11px; }
+        .line-content { padding-right: 16px; color: var(--text-muted); white-space: pre-wrap; word-break: break-all; }
+        .tok-comment { color: #5a5a57; font-style: italic; }
+        .tok-keyword { color: #ff6d00; }
         .code-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 0; }
         .code-scroll { max-height: 360px; overflow: auto; padding: 0 14px 10px; }
-        .code-scroll pre { margin: 0; font-family: var(--font-jet) !important; font-size: 12px; }
         .sim-note { margin: 0; padding: 0 14px 12px; font-size: 11px; color: var(--text-subtle); font-style: italic; }
         .code-empty { margin-top: 14px; color: var(--text-subtle); font-size: 12px; font-style: italic; }
 
@@ -1919,11 +2340,14 @@ function AppShellInternal() {
         .cycle-list { max-height: 280px; overflow: auto; display: grid; gap: 8px; }
         .empty-state { border: 1px dashed var(--border); border-radius: 8px; display: grid; place-items: center; gap: 12px; padding: 32px; color: var(--text-muted); }
         .cycle-item {
-          border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 12px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
-          cursor: pointer; transition: background-color 150ms ease;
+          border: 1px solid var(--glass-border); border-radius: 12px;
+          background: var(--glass-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+          padding: 12px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+          cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease;
+          box-shadow: var(--shadow-1);
           animation: list-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
         }
-        .cycle-item:hover { background: var(--surface-3); }
+        .cycle-item:hover { background: var(--glass-bg-light); border-color: var(--glass-border-strong); }
         @keyframes list-in { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
 
         .status-dot { margin-top: 4px; width: 8px; height: 8px; border-radius: 99px; background: var(--text-subtle); }
@@ -1944,27 +2368,51 @@ function AppShellInternal() {
         .apps-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 1fr); gap: 12px; overflow-x: auto; }
         .apps-grid-list { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); overflow: visible; }
         .app-card {
-          position: relative; min-width: 280px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(12px); padding: 20px; overflow: hidden;
-          transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+          position: relative; min-width: 280px; border: 1px solid var(--glass-border); border-radius: 16px;
+          background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+          padding: 20px 20px 20px 24px; overflow: hidden;
+          transition: transform 280ms var(--ease-spring), box-shadow 280ms ease;
+          box-shadow: var(--shadow-1);
         }
-        .app-card:hover { transform: translateY(-2px); }
-        .top-strip { position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--border); }
-        .strip-pass { background: var(--pass); }
-        .strip-accent { background: var(--accent); }
-        .strip-block { background: var(--block); }
-        .app-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-        .app-head h4 { margin: 0; font-size: 16px; font-family: var(--font-syne); }
+        .app-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-3); border-color: var(--glass-border-strong); }
+        .app-card::before {
+          content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+          width: 4px; border-radius: 4px 0 0 4px; background: var(--border);
+          transition: background-color 200ms ease;
+        }
+        .app-card.status-deployed::before { background: var(--pass); }
+        .app-card.status-incubating::before { background: var(--accent); }
+        .app-card.status-dropped::before { background: var(--block); }
+        .app-monogram {
+          width: 36px; height: 36px; border-radius: 10px; background: var(--accent-glow);
+          display: grid; place-items: center; font-family: var(--font-syne); font-size: 13px; font-weight: 700;
+          color: var(--accent); flex-shrink: 0;
+        }
+        .app-head { display: flex; gap: 12px; align-items: flex-start; }
+        .app-head-text { flex: 1; min-width: 0; }
+        .app-head-text h4 { margin: 0 0 4px; font-size: 15px; font-family: var(--font-syne); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .app-status-row { display: flex; align-items: center; gap: 6px; }
         .metric-stack { margin-top: 12px; display: grid; gap: 10px; }
         .metric-label { font-family: var(--font-jet); font-size: 11px; color: var(--text-subtle); margin-bottom: 4px; }
         .metric-track { height: 4px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
-        .metric-fill { height: 100%; background: var(--pass); transition: width 500ms ease-out; }
+        .metric-fill {
+          height: 100%; background: var(--pass);
+          width: 0%;
+          animation: metric-in var(--dur-slow) var(--ease-standard) forwards;
+        }
+        @keyframes metric-in { to { width: var(--target, 0%); } }
         .metric-fill.warning { background: var(--warning); }
         .metric-fill.block { background: var(--block); }
         .handoff { margin-top: 12px; color: var(--pass); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
         .drop { margin-top: 12px; color: var(--block); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
 
-        .stats-hero { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
-        .stats-hero > div { padding: 20px; border-right: 1px solid var(--border); }
+        .focal-stat { padding: 40px 24px 32px; border-bottom: 1px solid var(--border); }
+        .focal-number { font-family: var(--font-syne); font-size: clamp(64px, 10vw, 96px); font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+        .focal-delta { margin-top: 6px; font-family: var(--font-jet); font-size: 13px; color: var(--pass); }
+        .focal-delta.neg { color: var(--text-subtle); }
+
+        .stats-hero { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); background: var(--glass-bg); box-shadow: var(--shadow-1); }
+        .stats-hero > div { padding: 20px; border-right: 1px solid var(--glass-border); }
         .stats-hero > div:last-child { border-right: 0; }
         .hero-label { display: block; color: var(--text-subtle); font-size: 12px; margin-bottom: 4px; }
         .stats-hero strong { font-family: var(--font-syne); font-size: clamp(36px, 6vw, 52px); line-height: 1; }
@@ -1996,57 +2444,160 @@ function AppShellInternal() {
 
         .bubble-nav {
           position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 100;
-          padding: 10px; border-radius: 99px; border: 1px solid var(--border); backdrop-filter: blur(20px);
-          background: color-mix(in srgb, var(--surface) 85%, transparent);
-          display: inline-flex; gap: 6px;
+          padding: 8px; border-radius: 99px;
+          border: 1px solid var(--glass-border-strong);
+          backdrop-filter: saturate(200%) blur(32px); -webkit-backdrop-filter: saturate(200%) blur(32px);
+          background: rgba(14, 14, 18, 0.78);
+          display: inline-flex; gap: 4px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.52), 0 2px 8px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.1);
         }
-        .bubble-tab { position: relative; width: 86px; height: 44px; border-radius: 99px; display: grid; place-items: center; color: var(--text-muted); transition: transform 150ms ease, background-color 150ms ease; }
-        .bubble-tab:hover { transform: scale(1.1); background: var(--surface-3); }
-        .bubble-tab-active { color: var(--accent); background: var(--accent-glow-xs); }
-        .bubble-label {
-          position: absolute; top: -18px; font-size: 11px; color: var(--text-subtle); opacity: 0;
+        html[data-theme='light'] .bubble-nav {
+          background: rgba(252, 252, 250, 0.82);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.8);
+        }
+        .bubble-tab { position: relative; width: 86px; height: 44px; border-radius: 99px; display: grid; place-items: center; color: var(--text-muted); transition: transform var(--dur-fast) ease, background-color var(--dur-fast) ease; }
+        .bubble-tab:hover { transform: scale(1.08); background: rgba(255,255,255,0.06); }
+        .bubble-tab-active { color: var(--accent); background: rgba(255,109,0,0.1); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+        .bubble-label { display: none; }
+        .bubble-label-active {
+          display: block; position: absolute; top: -18px; font-size: 11px; color: var(--text-subtle); opacity: 0;
           animation: bubble-label 200ms ease forwards;
         }
         @keyframes bubble-label { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .bubble-dot { position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 99px; background: var(--accent); }
 
         .agent-bubble { position: fixed; right: 24px; bottom: 96px; z-index: 200; }
-        .agent-fab { width: 56px; height: 56px; border-radius: 99px; background: var(--accent); color: #fff; position: relative; display: grid; place-items: center; }
+        .agent-fab {
+          width: 56px; height: 56px; border-radius: 99px; background: var(--accent); color: #fff;
+          position: relative; display: grid; place-items: center; box-shadow: var(--shadow-3);
+          transition: background-color 300ms ease, box-shadow 300ms ease;
+        }
+        .agent-fab.outcome-pass { animation: fab-pass 600ms ease-out 1; }
+        .agent-fab.outcome-block { animation: fab-block 600ms ease-out 1; }
+        @keyframes fab-pass { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 100% { box-shadow: 0 0 0 18px rgba(34,197,94,0); } }
+        @keyframes fab-block { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); } 100% { box-shadow: 0 0 0 18px rgba(239,68,68,0); } }
         .ring { position: absolute; inset: 0; border-radius: 99px; border: 1.5px solid var(--accent); animation: pulse-ring 1.8s ease-out infinite; }
         .ring-delay { animation-delay: 0.6s; }
         @keyframes pulse-ring { from { transform: scale(1); opacity: 0.5; } to { transform: scale(2.2); opacity: 0; } }
+        .spin-slow { animation: spin 3s linear infinite; }
 
         .agent-info-pill {
           position: absolute; right: 64px; top: 8px; white-space: nowrap; max-width: 0; overflow: hidden;
           transition: max-width 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
-          border-radius: 999px; background: var(--surface); border: 1px solid var(--border); padding: 8px 12px; font-size: 12px; color: var(--text-muted);
+          border-radius: 999px; background: var(--glass-bg); border: 1px solid var(--glass-border-strong);
+          padding: 8px 12px; font-size: 12px; color: var(--text-muted);
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          box-shadow: var(--shadow-2);
         }
         .agent-bubble:hover .agent-info-pill { max-width: 200px; }
 
         .agent-panel {
-          position: absolute; right: 0; bottom: 66px; width: 300px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--border); border-radius: 14px; backdrop-filter: blur(20px);
-          padding: 16px; display: grid; gap: 10px; opacity: 0; transform: scale(0.9); pointer-events: none;
+          position: absolute; right: 0; bottom: 66px; width: 300px;
+          background: var(--glass-bg);
+          border: 1px solid var(--glass-border-strong); border-radius: 18px;
+          backdrop-filter: saturate(200%) blur(36px); -webkit-backdrop-filter: saturate(200%) blur(36px);
+          padding: 16px; display: grid; gap: 10px; opacity: 0; transform: scale(0.9) translateY(8px); pointer-events: none;
           transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease;
+          box-shadow: var(--shadow-4);
         }
-        .agent-bubble-open .agent-panel { opacity: 1; transform: scale(1); pointer-events: auto; }
+        .agent-bubble-open .agent-panel { opacity: 1; transform: scale(1) translateY(0); pointer-events: auto; }
         .agent-last { display: grid; gap: 6px; }
         .agent-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
 
         .toast-stack { position: fixed; top: 20px; right: 20px; z-index: 300; display: grid; gap: 10px; width: min(360px, calc(100vw - 40px)); }
         .toast {
-          border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; background: var(--surface-2);
-          padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px;
-          animation: toast-in 220ms ease;
+          border: 1px solid var(--glass-border); border-left-width: 3px; border-radius: 13px;
+          background: var(--glass-bg);
+          backdrop-filter: saturate(180%) blur(28px); -webkit-backdrop-filter: saturate(180%) blur(28px);
+          padding: 13px 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px;
+          animation: toast-in 220ms ease; position: relative; overflow: hidden; cursor: pointer;
+          box-shadow: 0 8px 28px rgba(0,0,0,0.36), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.07);
+          line-height: 1.5;
         }
         .toast-accent { border-left-color: var(--accent); }
         .toast-pass { border-left-color: var(--pass); }
         .toast-block { border-left-color: var(--block); }
         .toast-warning { border-left-color: var(--warning); }
         @keyframes toast-in { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
+        .toast-timer {
+          position: absolute; bottom: 0; left: 0; height: 2px;
+          background: currentColor; opacity: 0.3; border-radius: 0 0 10px 10px;
+          animation: drain linear forwards; pointer-events: none;
+        }
+        @keyframes drain { from { width: 100%; } to { width: 0%; } }
+
+        /* Empty states */
+        .empty-slot {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 12px; min-height: 200px;
+          border: 1px dashed var(--glass-border);
+          background: var(--glass-bg);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          border-radius: 18px; padding: 40px; text-align: center;
+        }
+        .empty-icon { color: var(--text-subtle); opacity: 0.45; }
+        .empty-title { font-family: var(--font-syne); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text-muted); margin: 0; }
+        .empty-hint { font-size: 14px; color: var(--text-subtle); max-width: 280px; margin: 0; line-height: 1.55; }
+
+        /* Atlas masonry */
+        .atlas-masonry { columns: 2; column-gap: 16px; }
+        .atlas-masonry > article { break-inside: avoid; margin-bottom: 16px; }
 
         @media (max-width: 1023px) {
           .landing-text { margin-inline: 32px; }
           .charts-grid { grid-template-columns: 1fr; }
+          .input-col, .live-col { display: contents; }
+          .center-head { text-align: center; }
+        }
+
+        /* Agent layout split-pane (desktop) */
+        @media (min-width: 1024px) {
+          .agent-layout {
+            display: grid; grid-template-columns: 480px 1fr; gap: 0;
+            min-height: calc(100vh - 56px); padding-top: 0;
+            width: 100%;
+            max-width: none;
+            margin: 0;
+          }
+          .input-col {
+            position: sticky; top: 56px; height: calc(100vh - 56px);
+            overflow-y: auto; padding: 32px 24px 100px 32px;
+            border-right: 1px solid var(--glass-border);
+            display: flex; flex-direction: column; gap: 16px;
+            background: linear-gradient(160deg, rgba(14,14,18,0.6) 0%, transparent 60%);
+          }
+          html[data-theme='light'] .input-col {
+            background: linear-gradient(160deg, rgba(255,255,255,0.35) 0%, transparent 60%);
+          }
+          .live-col {
+            padding: 32px 32px 100px 24px;
+            overflow-y: auto; height: calc(100vh - 56px);
+            display: flex; flex-direction: column; gap: 16px;
+            min-width: 0;
+          }
+          /* Desktop side-rail nav */
+          .bubble-nav {
+            left: 0; bottom: 0; top: 56px; transform: none;
+            width: 64px; height: auto; border-radius: 0;
+            border-right: 1px solid var(--glass-border);
+            border-bottom: none; border-left: none; border-top: none;
+            flex-direction: column; padding: 20px 8px;
+            justify-content: flex-start; gap: 4px;
+            background: var(--glass-bg);
+            backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px);
+            box-shadow: 1px 0 0 var(--glass-border);
+          }
+          .bubble-tab { width: 48px; height: 48px; border-radius: 12px; position: relative; }
+          .bubble-tab:hover .bubble-label {
+            display: block; position: absolute; left: calc(100% + 10px); top: 50%;
+            transform: translateY(-50%); background: var(--glass-bg); border: 1px solid var(--glass-border-strong);
+            border-radius: 8px; padding: 6px 10px; white-space: nowrap; font-size: 12px;
+            pointer-events: none; opacity: 1; animation: none; z-index: 10;
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            box-shadow: var(--shadow-2);
+          }
+          .app-main { padding-left: 96px; }
+          .agent-bubble { bottom: 24px; }
         }
 
         @media (max-width: 767px) {
@@ -2067,764 +2618,33 @@ function AppShellInternal() {
           .budget-row { grid-template-columns: 1fr; }
           .table-head, .table-row { grid-template-columns: 2fr 1fr 1fr; }
           .table-head span:nth-child(n+4), .table-row span:nth-child(n+4) { display: none; }
+          .atlas-masonry { columns: 1; }
+          .agent-layout { display: flex; flex-direction: column; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .bars-canvas, .flow-canvas, .ring, .ring-delay, .magnet, .magnet-small, .tilt, .spark-burst { display: none !important; }
+          .bars-canvas, .flow-canvas, .ring, .ring-delay, .magnet, .magnet-small, .tilt, .spark-burst,
+          .neural-thread, .stage-pulse, .toast-timer { display: none !important; }
           * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
         }
       `}</style>
 
-      <canvas ref={canvasRef} className="canvas-bg" />
-
-      <div className="app">
-        <header className="topbar">
-          <div className="topbar-inner">
-            <div className="wordmark">AgentSafe</div>
-            <div className="center-network" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 12 }}>
-              <Globe size={12} strokeWidth={1.5} />
-              <span className="pulse-ring" style={{ width: 8, height: 8 }}>
-                <span className="dot" style={{ width: 8, height: 8, background: 'var(--success)' }} />
-                <span className="ring" style={{ borderColor: 'var(--success)' }} />
-                <span className="ring b" style={{ borderColor: 'var(--success)' }} />
-              </span>
-              Base Mainnet
-            </div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {connected && (
-                <button className="chip-wallet" onClick={() => copy(walletAddress, 'wallet')}>
-                  {`${walletAddress.slice(0, 8)}...${walletAddress.slice(-4)}`}
-                  {copied === 'wallet' ? <CheckCircle2 size={14} strokeWidth={1.5} className="copy-icon" style={{ opacity: 1, color: 'var(--success)' }} /> : <Copy size={14} strokeWidth={1.5} className="copy-icon" />}
-                </button>
-              )}
-              {connected && (
-                <button className="icon-btn" onClick={() => { setConnected(false); setView('landing'); }}>
-                  <LogOut size={18} strokeWidth={1.5} />
-                </button>
-              )}
-              <button className="icon-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
-                {theme === 'dark' ? <Sun size={20} strokeWidth={1.5} /> : <Moon size={20} strokeWidth={1.5} />}
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {appView === 'landing' ? (
-          <section className="hero-wrap">
-            <div>
-              <h1 className="hero-title">{heading}</h1>
-              <div className="hero-line" />
-              <div className="hero-sub">Your wallet&apos;s immune system.</div>
-
-              <div className="feature-row">
-                <span className="micro-badge"><span className="micro-dot approval" /><ShieldAlert size={14} strokeWidth={1.5} /> APPROVAL GUARD</span>
-                <span className="micro-badge"><span className="micro-dot governance" /><Vote size={14} strokeWidth={1.5} /> GOVERNANCE SAFE</span>
-                <span className="micro-badge"><span className="micro-dot liquidation" /><Activity size={14} strokeWidth={1.5} /> LIQUIDATION PREVENTION</span>
-              </div>
-
-              <div style={{ marginTop: 48 }}>
-                <MagneticButton className="btn-primary cta" enable={hoverCapable && !mobile && !reduced} onClick={connect} style={{ width: 240 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Wallet size={18} strokeWidth={1.5} />Connect Wallet</span>
-                </MagneticButton>
-              </div>
-
-              <div style={{ position: 'fixed', left: '50%', bottom: 16, transform: 'translateX(-50%)', display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--text-subtle)', fontSize: 11 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><rect width="10" height="10" fill="currentColor" /></svg>
-                <span className="mono">Built on Base</span>
-              </div>
-            </div>
-          </section>
-        ) : (
-          <main className="main-wrap">
-            {view === 'dashboard' && (
-              <section className="lane-layout">
-                <div style={{ display: 'grid', gap: 14 }}>
-                  {[
-                    { name: 'Sentinel', color: 'var(--cluster-approval)', icon: ShieldAlert, text: 'Monitoring approvals and spender contracts.', last: '2 min ago' },
-                    { name: 'Scam Detector', color: 'var(--cluster-governance)', icon: AlertTriangle, text: 'Evaluating governance payloads and risk shifts.', last: '14 min ago' },
-                    { name: 'Liquidation Predictor', color: 'var(--cluster-liquidation)', icon: HeartPulse, text: 'Watching health factor and collateral drift.', last: '1h 23m ago' },
-                  ].map((agent, i) => {
-                    const Icon = agent.icon;
-                    return (
-                      <Reveal key={agent.name} index={i}>
-                        <div className="hud-card interactive trace agent-card" onMouseMove={cardGlow} style={{ borderLeft: `2px solid ${agent.color}` }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              <Icon size={18} strokeWidth={1.5} color={agent.color} />
-                              <strong style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 18 }}>{agent.name}</strong>
-                            </div>
-                            <span className="pulse-ring" style={{ '--accent': agent.color } as React.CSSProperties}>
-                              <span className="dot" style={{ background: agent.color }} />
-                              <span className="ring" style={{ borderColor: agent.color }} />
-                              <span className="ring b" style={{ borderColor: agent.color }} />
-                            </span>
-                          </div>
-                          <p style={{ margin: '10px 0 4px', fontSize: 13, color: 'var(--text-muted)' }}>{agent.text}</p>
-                          <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>Last action: {agent.last}</div>
-                          <svg width="100%" height="40" viewBox="0 0 240 40" style={{ marginTop: 10 }}>
-                            <path d="M0 30 L40 22 L80 26 L120 18 L160 20 L200 12 L240 16" fill="none" stroke={agent.color} strokeWidth="1.5" />
-                          </svg>
-                          <div style={{ textAlign: 'right' }}><button className="btn-ghost">Details</button></div>
-                        </div>
-                      </Reveal>
-                    );
-                  })}
-                </div>
-
-                <div>
-                  <Reveal index={3}>
-                    <div className={`radar ${analysisRunning ? 'fast' : ''}`}>
-                      <svg width="200" height="200" viewBox="0 0 200 200">
-                        <circle className="track" cx="100" cy="100" r="90" fill="none" strokeWidth="2" />
-                        <circle className="sweep" cx="100" cy="100" r="90" fill="none" strokeWidth="2" />
-                      </svg>
-                      <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
-                        <div>
-                          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 14, letterSpacing: '0.15em', color: 'var(--accent)', fontWeight: 700 }}>ACTIVE</div>
-                          <div className="mono" style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 4 }}>3 AGENTS</div>
-                        </div>
-                      </div>
-                    </div>
-                  </Reveal>
-
-                  <Reveal index={4}>
-                    <div className="ticker">
-                      {feed.length ? (
-                        feed.map((row) => {
-                          const color = row.icon === 'danger' ? 'var(--danger)' : row.icon === 'success' ? 'var(--success)' : row.icon === 'warning' ? 'var(--warning)' : 'var(--accent)';
-                          const Icon = row.icon === 'danger' ? XCircle : row.icon === 'success' ? CheckCircle2 : ArrowRightLeft;
-                          return (
-                            <div key={row.id} className={`tick-row ${feedNew === row.id ? 'new' : ''}`}>
-                              <Icon size={14} strokeWidth={1.5} color={color} />
-                              <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.text}</span>
-                              <span style={{ color: 'var(--text-subtle)', fontSize: 11 }}>{row.time}</span>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="scan-text">SCANNING...</div>
-                      )}
-                    </div>
-                  </Reveal>
-
-                  <Reveal index={5}>
-                    <div className="pill-row">
-                      {[
-                        { id: 'a', label: 'Approvals Blocked', value: statA, icon: ShieldAlert, color: 'var(--danger)' },
-                        { id: 'b', label: 'Proposals', value: statB, icon: Vote, color: 'var(--cluster-governance)' },
-                        { id: 'c', label: 'Saved', value: statC, icon: Activity, color: 'var(--success)' },
-                      ].map((pill) => {
-                        const Icon = pill.icon;
-                        return (
-                          <div
-                            key={pill.id}
-                            className="stat-pill"
-                            onMouseEnter={() => setStatKey((prev) => ({ ...prev, [pill.id]: prev[pill.id] + 1 }))}
-                          >
-                            <Icon size={16} strokeWidth={1.5} color={pill.color} />
-                            <span className="mono" style={{ fontSize: 18 }}>{pill.value}</span>
-                            <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{pill.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Reveal>
-                </div>
-
-                <div>
-                  <div className="label" style={{ marginBottom: 8 }}>REVIEW QUEUE</div>
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {review.length ? (
-                      review.map((item, idx) => (
-                        <Reveal key={item.id} index={idx + 6}>
-                          <div className={`hud-card interactive queue-card ${item.state === 'flyout' ? 'flyout' : ''} ${item.state === 'signed' ? 'signed' : ''}`} onMouseMove={cardGlow}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span className={`badge ${item.type === 'BLOCK' ? 'danger' : item.type === 'REPAY' ? 'success' : 'warning'}`}>{item.type}</span>
-                              <span className="mono" style={{ fontSize: 28, color: item.risk > 70 ? 'var(--danger)' : item.risk > 35 ? 'var(--warning)' : 'var(--success)' }}>{item.risk}</span>
-                            </div>
-                            <p style={{ margin: '8px 0', fontSize: 13 }}>{item.text}</p>
-                            <RiskBar risk={item.risk} />
-                            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                              <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced} style={{ height: 36, flex: 1 }} onClick={() => signReview(item.id)}>
-                                Review & Sign
-                              </MagneticButton>
-                              <button className="btn-ghost" onClick={() => dismissReview(item.id)}>Dismiss</button>
-                            </div>
-                          </div>
-                        </Reveal>
-                      ))
-                    ) : (
-                      <div className="empty-queue">
-                        <div>
-                          <CheckCircle2 className="rot-slow" size={36} strokeWidth={1.5} color="var(--success)" />
-                          <div style={{ marginTop: 8, fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 20 }}>All protected</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {view === 'approval' && (
-              <section>
-                <div style={{ textAlign: 'center', marginBottom: 20, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <ShieldAlert size={28} strokeWidth={1.5} color="var(--accent)" />
-                  <h2 style={{ margin: 0, fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 32, color: 'var(--accent)' }}>APPROVAL GUARD</h2>
-                </div>
-
-                <div className="analysis-shell">
-                  <div className="label">Target Address</div>
-                  <input className="input mono" value={target} onChange={(event) => setTarget(event.target.value)} />
-                  <div style={{ marginTop: 6, color: 'var(--text-subtle)', fontSize: 11 }}>Resolving...</div>
-
-                  <div className="label" style={{ marginTop: 12 }}>Transaction Kind</div>
-                  <div className="kind-row">
-                    {(['APPROVAL', 'LEND', 'OTHER'] as const).map((k) => (
-                      <button key={k} className={`kind-pill ${kind === k ? 'active' : ''}`} onClick={() => setKind(k)}>{k}</button>
-                    ))}
-                  </div>
-
-                  <div className="label" style={{ marginTop: 12 }}>Calldata</div>
-                  <textarea className="textarea mono" rows={4} value={calldata} onChange={(event) => setCalldata(event.target.value)} />
-
-                  <MagneticButton
-                    className="btn-primary"
-                    style={{ width: '100%', marginTop: 14 }}
-                    enable={hoverCapable && !mobile && !reduced}
-                    onClick={analyzeApproval}
-                  >
-                    ANALYZE
-                  </MagneticButton>
-                </div>
-
-                <div className="expand-wrap" style={{ maxHeight: analyzing || analyzed ? 800 : 0, marginTop: 14 }}>
-                  <div className="analysis-shell" style={{ marginTop: 14 }}>
-                    {analyzing && (
-                      <div>
-                        <div className="risk-track"><div className="risk-fill" style={{ width: '100%', background: 'var(--accent)' }} /></div>
-                        <div style={{ marginTop: 10, color: 'var(--text-muted)' }}>Running multi-agent analysis...</div>
-                      </div>
-                    )}
-
-                    {analyzed && (
-                      <>
-                        <div className="risk-track"><div className="risk-fill" style={{ width: '100%', background: consensus === 'BLOCKED' ? 'var(--danger)' : consensus === 'REVIEW' ? 'var(--warning)' : 'var(--success)' }} /></div>
-
-                        <div className="timeline">
-                          {[
-                            { icon: ShieldAlert, name: 'Sentinel' },
-                            { icon: AlertTriangle, name: 'Scam Detector' },
-                            { icon: Activity, name: 'Liquidation Predictor' },
-                          ].flatMap((n, i) => {
-                            const Icon = n.icon;
-                            const done = step > i;
-                            const lineDone = step > i + 1;
-                            const out: React.ReactNode[] = [
-                              <div key={`${n.name}-n`} className="tl-node">
-                                <div className={`tl-circle ${done ? 'done' : ''}`}>
-                                  <Icon size={18} strokeWidth={1.5} color={done ? 'var(--accent)' : 'var(--text-subtle)'} />
-                                </div>
-                                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>{n.name}</div>
-                              </div>,
-                            ];
-                            if (i < 2) out.push(<div key={`${n.name}-l`} className={`tl-line ${lineDone ? 'done' : ''}`}><span /></div>);
-                            return out;
-                          })}
-                        </div>
-
-                        <div className="consensus-word" style={{ color: consensus === 'BLOCKED' ? 'var(--danger)' : consensus === 'REVIEW' ? 'var(--warning)' : 'var(--success)' }}>
-                          {consensusText}
-                        </div>
-                        <p style={{ marginTop: 0, textAlign: 'center', color: 'var(--text-muted)' }}>
-                          {consensus === 'BLOCKED'
-                            ? 'Approval Guard proposes BLOCK and REVOKE intent.'
-                            : consensus === 'REVIEW'
-                              ? 'Policy conflict detected. Human review required.'
-                              : 'No high-risk patterns detected. Safe to execute.'}
-                        </p>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                          <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced} style={{ height: 44 }}>
-                            <Play size={16} strokeWidth={1.5} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />Sign & Execute
-                          </MagneticButton>
-                          <button className="btn-ghost">Dismiss</button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {view === 'governance' && (
-              <section>
-                <div className="hud-card" style={{ borderRadius: 16 }}>
-                  <input className="input" placeholder="Search proposals" value={proposalQuery} onChange={(event) => setProposalQuery(event.target.value)} style={{ height: 52, borderRadius: 16 }} />
-                  <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {(['all', 'active', 'vetoed', 'voted'] as const).map((tab) => (
-                      <button key={tab} className={`kind-pill ${proposalTab === tab ? 'active' : ''}`} onClick={() => setProposalTab(tab)}>
-                        {tab.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
-                  {proposals.map((proposal, idx) => (
-                    <Reveal key={proposal.id} index={idx}>
-                      <ProposalCard
-                        proposal={proposal}
-                        open={proposalOpen === proposal.id}
-                        onToggle={() => setProposalOpen((prev) => (prev === proposal.id ? '' : proposal.id))}
-                        reduced={reduced}
-                        enableMagnetic={hoverCapable && !mobile && !reduced}
-                        mobile={mobile}
-                      />
-                    </Reveal>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {view === 'liquidation' && (
-              <section>
-                <div className="hud-card">
-                  <div className="gauge-row">
-                    <div style={{ textAlign: 'center' }} onMouseEnter={() => setStatKey((prev) => ({ ...prev, hf: prev.hf + 1 }))}>
-                      <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true">
-                        <circle cx="100" cy="100" r="88" fill="none" stroke="var(--surface-3)" strokeWidth="8" />
-                        <circle
-                          cx="100"
-                          cy="100"
-                          r="88"
-                          fill="none"
-                          stroke={1.42 < 1.2 ? 'var(--danger)' : 1.42 < 1.5 ? 'var(--warning)' : 'var(--success)'}
-                          strokeWidth="8"
-                          strokeDasharray={553}
-                          strokeDashoffset={553 * (1 - 1.42 / 3)}
-                          strokeLinecap="round"
-                          transform="rotate(-90 100 100)"
-                          style={{ transition: 'stroke-dashoffset 800ms ease-out' }}
-                        />
-                        <text x="100" y="104" textAnchor="middle" className="mono" style={{ fill: 'var(--text)', fontSize: 36, fontWeight: 500 }}>{hf}</text>
-                      </svg>
-                      <div className="label">HEALTH FACTOR</div>
-                    </div>
-                    <div className="divider-v" />
-                    <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, cr: prev.cr + 1 }))}>
-                      <div className="label">COLLATERAL RATIO</div>
-                      <div className="mono" style={{ fontSize: 36, fontWeight: 500, marginTop: 10 }}>{cr}</div>
-                    </div>
-                    <div className="divider-v" />
-                    <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, lp: prev.lp + 1 }))}>
-                      <div className="label">LIQUIDATION PRICE</div>
-                      <div className="mono" style={{ fontSize: 36, fontWeight: 500, marginTop: 10 }}>{lp}</div>
-                      <div style={{ color: 'var(--text-subtle)', fontSize: 12 }}>Current: $2,340</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
-                  {[
-                    { id: 'l1', critical: true, text: 'Aave health factor dropped to 0.98. Immediate action required.', action: 'REPAY 0.5 ETH' },
-                    { id: 'l2', critical: false, text: 'Compound collateral ratio near warning threshold.', action: 'ADD_COLLATERAL 2,400 USDC' },
-                    { id: 'l3', critical: false, text: 'MakerDAO vault stable; monitor liquidation distance.', action: 'MONITOR' },
-                  ].map((alert) => (
-                    <div key={alert.id} className={`hud-card interactive alert-card ${alert.critical ? 'critical' : ''}`} onMouseMove={cardGlow} style={{ borderLeft: `${alert.critical ? 3 : 1}px solid ${alert.critical ? 'var(--danger)' : 'var(--border)'}`, background: alert.critical ? 'var(--danger-muted)' : undefined }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '24px 1fr auto', alignItems: 'center', gap: 12 }}>
-                        <HeartPulse size={24} strokeWidth={1.5} color={alert.critical ? 'var(--danger)' : 'var(--warning)'} />
-                        <div>
-                          {alert.critical && <span className="badge danger" style={{ animation: 'scan-pulse 1200ms ease-in-out infinite' }}>CRITICAL</span>}
-                          <div style={{ marginTop: 6 }}>{alert.text}</div>
-                          <span className="badge neutral" style={{ marginTop: 8 }}>{alert.action}</span>
-                        </div>
-                        <MagneticButton className="btn-primary" enable={hoverCapable && !mobile && !reduced}>Execute Protection</MagneticButton>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {view === 'stats' && (
-              <section>
-                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1px 1fr', gap: 20, alignItems: 'center', textAlign: 'center', marginBottom: 20 }}>
-                  <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, d: prev.d + 1 }))}>
-                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 80, lineHeight: 1 }}>{statD}</div>
-                    <div className="label">SWARM RUNS</div>
-                  </div>
-                  {!mobile && <div className="divider-v" style={{ height: 80 }} />}
-                  <div onMouseEnter={() => setStatKey((prev) => ({ ...prev, e: prev.e + 1 }))}>
-                    <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 80, lineHeight: 1 }}>{statE}</div>
-                    <div className="label">ACTIONS PROPOSED</div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
-                  {['Sentinel', 'Scam Detector', 'Liquidation Predictor'].map((name) => (
-                    <div key={name} className="hud-card interactive" onMouseMove={cardGlow}>
-                      <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 600, fontSize: 18 }}>{name}</div>
-                      <div style={{ height: 150, marginTop: 8 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={areaData}>
-                            <defs>
-                              <linearGradient id={`grad-${name}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.25} />
-                                <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                              </linearGradient>
-                            </defs>
-                            <XAxis dataKey="t" axisLine={{ stroke: 'var(--border)' }} tickLine={false} tick={{ fill: 'var(--text-subtle)', fontSize: 11 }} />
-                            <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11, color: 'var(--text)' }} />
-                            <Area type="monotone" dataKey="v" stroke="var(--accent)" strokeWidth={1.5} fill={`url(#grad-${name})`} />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="hud-card" style={{ marginTop: 14 }}>
-                  {[{
-                    id: 's1',
-                    block: '24681359',
-                    hash: '0x3a8f92b4e1d0c6f8a2b5e9d3c7f1a4b8e2d6c0f9',
-                    kind: 'APPROVAL',
-                    outcome: 'BLOCK',
-                    time: '8 min ago',
-                    details: 'Sentinel and Scam Detector reached block consensus with 0.94 confidence.',
-                  }, {
-                    id: 's2',
-                    block: '24681211',
-                    hash: '0x6d2ca2b7f1806c4eea5603f5a1c7734b0c2e3a1fbc8398e70a46f2a0c2de7130',
-                    kind: 'GOV_VOTE',
-                    outcome: 'VETO',
-                    time: '37 min ago',
-                    details: 'Human veto executed before countdown close due to treasury risk drift.',
-                  }].map((row) => (
-                    <StatsRow key={row.id} row={row} onCopy={copy} copied={copied === row.id} />
-                  ))}
-                </div>
-              </section>
-            )}
-            {view === 'spatial' && (
-              <section className="space-y-6">
-                {/* Header */}
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-violet-500/15 via-transparent to-cyan-500/15 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.35)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-200/80">Blockade Labs × AgentSafe</p>
-                  <h2 className="mt-2 text-3xl font-semibold text-white">Spatial Atlas</h2>
-                  <p className="mt-2 max-w-3xl text-sm text-slate-300">
-                    360° spatial environments for governance proposals and the agent&apos;s own creative evolution.
-                    Each environment maps domains to spatial zones with multi-agent markers.
-                  </p>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-4">
-                    <AtlasStat label="Governance Spaces" value={spacesLoading ? '…' : String(spaces.length)} />
-                    <AtlasStat label="Complete" value={spacesLoading ? '…' : String(spaces.filter(s => s.status === 'complete').length)} />
-                    <AtlasStat label="App Scenes" value={atlasLoading ? '…' : String(atlas.length)} />
-                    <AtlasStat label="Apps Complete" value={atlasLoading ? '…' : String(atlas.filter(a => a.status_spatial === 'complete').length)} />
-                  </div>
-                </div>
-
-                {/* Tab switcher */}
-                <div className="flex gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
-                  <button
-                    onClick={() => setSpatialTab('governance')}
-                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-                      spatialTab === 'governance'
-                        ? 'bg-violet-500/20 text-violet-200 border border-violet-400/30'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Governance Proposals
-                  </button>
-                  <button
-                    onClick={() => setSpatialTab('evolution')}
-                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-                      spatialTab === 'evolution'
-                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    App Evolution Atlas
-                  </button>
-                </div>
-
-                {/* ── GOVERNANCE TAB ── */}
-                {spatialTab === 'governance' && (
-                  <>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as typeof severityFilter)} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200">
-                          <option value="all">All Severities</option>
-                          <option value="high">High</option>
-                          <option value="med">Medium</option>
-                          <option value="low">Low</option>
-                        </select>
-                        <select value={recFilter} onChange={(e) => setRecFilter(e.target.value as typeof recFilter)} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-200">
-                          <option value="all">All Recommendations</option>
-                          <option value="FOR">FOR</option>
-                          <option value="AGAINST">AGAINST</option>
-                          <option value="ABSTAIN">ABSTAIN</option>
-                        </select>
-                        <button onClick={loadGovernanceSpaces} className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">Refresh</button>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-400">Showing {spatialFiltered.length} of {spaces.length} environments</p>
-                    </div>
-                    {spacesError && (
-                      <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-rose-200">
-                        {spacesError}
-                        <button onClick={loadGovernanceSpaces} className="ml-3 underline hover:text-white">Retry</button>
-                      </div>
-                    )}
-                    {spacesLoading && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-300 animate-pulse">Loading spatial environments…</div>}
-                    {!spacesLoading && spatialFiltered.length === 0 && !spacesError && (
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-400">No spatial environments yet. Generate one from the Governance view.</div>
-                    )}
-                    {!spacesLoading && spatialFiltered.length > 0 && (
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {spatialFiltered.map((space) => (
-                          <SpaceCard key={space.proposalId} space={space} recColor={spatialRecColor} recBg={spatialRecBg} sevBadge={spatialSevBadge} maxSeverity={spatialMaxSeverity} />
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* ── EVOLUTION TAB ── */}
-                {spatialTab === 'evolution' && (
-                  <>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex items-center justify-between">
-                      <p className="text-sm text-slate-300">Every Base mini-app the agent has deployed — visualised as a Blockade Labs 360° environment.</p>
-                      <div className="ml-4 shrink-0 flex gap-2">
-                        <button onClick={handleSeedTest} className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 transition hover:bg-cyan-500/20 font-medium">
-                          ⚡ Seed Test App
-                        </button>
-                        <button onClick={loadEvolutionAtlas} className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-sm text-slate-300 transition hover:border-white/25 hover:text-white">Refresh</button>
-                      </div>
-                    </div>
-                    {seedStatus && (
-                      <div className={`rounded-xl border px-4 py-2 text-sm ${
-                        seedStatus.startsWith('✓') ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
-                        : seedStatus.startsWith('✗') ? 'border-red-400/30 bg-red-500/10 text-rose-200'
-                        : 'border-amber-400/30 bg-amber-500/10 text-amber-200 animate-pulse'
-                      }`}>
-                        {seedStatus}
-                      </div>
-                    )}
-                    {atlasError && (
-                      <div className="rounded-2xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-rose-200">
-                        {atlasError}
-                        <button onClick={loadEvolutionAtlas} className="ml-3 underline hover:text-white">Retry</button>
-                      </div>
-                    )}
-                    {atlasLoading && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-300 animate-pulse">Loading evolution atlas…</div>}
-                    {!atlasLoading && atlas.length === 0 && !atlasError && (
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-400">No app scenes yet. Deploy an app — a 360° scene will be auto-generated.</div>
-                    )}
-                    {!atlasLoading && atlas.length > 0 && (
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {atlas.map((mem) => (
-                          <AppSceneCard key={mem.appId} mem={mem} sevBadge={spatialSevBadge} />
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </section>
-            )}
-          </main>
-        )}
-
-        {connected && (
-          <>
-            <div className="bubble-nav" ref={navRef}>
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = view === item.key;
-                const hovered = navHover === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    ref={(el) => {
-                      navButtons.current[item.key] = el;
-                    }}
-                    className={`bubble-btn ${active ? 'active' : ''}`}
-                    onMouseEnter={() => setNavHover(item.key)}
-                    onMouseLeave={() => setNavHover('')}
-                    onClick={() => setView(item.key as View)}
-                  >
-                    <Icon size={20} strokeWidth={1.5} />
-                    <span className="bubble-label">{active || hovered ? item.label : ''}</span>
-                  </button>
-                );
-              })}
-              <span className="nav-indicator" style={{ left: indicatorX }} />
-            </div>
-
-            <div className="swarm-bubble" ref={bubbleRef}>
-              <button className="swarm-btn" onClick={() => setBubbleOpen((prev) => !prev)}>
-                <span className="pulse-ring">
-                  <span className="dot" />
-                  <span className="ring" />
-                  <span className="ring b" />
-                </span>
-                <Bot size={20} strokeWidth={1.5} />
-                <span className="swarm-btn-label">3 Agents Active</span>
-              </button>
-
-              {bubbleOpen && (
-                <div className="swarm-panel">
-                  {[
-                    { icon: ShieldAlert, text: 'Sentinel blocked dangerous approval intent', time: '2 min ago' },
-                    { icon: Vote, text: 'Governance Safe scored proposal risk at 67', time: '14 min ago' },
-                    { icon: Activity, text: 'Liquidation Predictor queued repay 0.847 ETH', time: '1h 23m ago' },
-                  ].map((entry) => {
-                    const Icon = entry.icon;
-                    return (
-                      <div key={entry.text} style={{ display: 'grid', gridTemplateColumns: '18px 1fr', gap: 8, marginBottom: 10 }}>
-                        <Icon size={16} strokeWidth={1.5} color="var(--accent)" />
-                        <div>
-                          <div style={{ fontSize: 13 }}>{entry.text}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{entry.time}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <button className="btn-ghost" onClick={() => setView('dashboard')} style={{ width: '100%' }}>
-                    View All Activity
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </>
+    </div>
   );
 }
 
-// ─── Spatial Atlas pure helpers ────────────────────────
-
+// ─── AtlasStat ───────────────────────────────────────────
 function spatialSevBadge(sev: string): string {
   if (sev === 'high') return 'bg-rose-500/20 text-rose-300 border-rose-400/30';
   if (sev === 'med') return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
   return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
 }
-function spatialMaxSeverity(mem: SpatialMemory): 'low' | 'med' | 'high' {
-  if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'high')) return 'high';
-  if (mem.agentMarkers.some((m: AgentMarker) => m.severity === 'med')) return 'med';
-  return 'low';
-}
-function spatialRecColor(rec: string): string {
-  if (rec === 'FOR') return 'text-emerald-300';
-  if (rec === 'AGAINST') return 'text-rose-300';
-  return 'text-amber-300';
-}
-function spatialRecBg(rec: string): string {
-  if (rec === 'FOR') return 'border-emerald-400/30 bg-emerald-400/10';
-  if (rec === 'AGAINST') return 'border-rose-400/30 bg-rose-400/10';
-  return 'border-amber-400/30 bg-amber-400/10';
-}
-
-// ─── AtlasStat ───────────────────────────────────────────
 function AtlasStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-white/15 bg-black/20 px-4 py-3">
       <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
     </div>
-  );
-}
-
-// ─── SpaceCard ───────────────────────────────────────────
-function SpaceCard({ space, recColor, recBg, sevBadge, maxSeverity }: {
-  space: SpatialMemory;
-  recColor: (r: string) => string;
-  recBg: (r: string) => string;
-  sevBadge: (s: string) => string;
-  maxSeverity: (m: SpatialMemory) => string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (space.status === 'processing' || space.status === 'pending') {
-    return (
-      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4 animate-pulse">
-        <p className="text-xs uppercase tracking-wide text-amber-300">Processing…</p>
-        <p className="mt-1 text-sm text-slate-300 font-mono truncate">{space.proposalId.slice(0, 16)}…</p>
-      </div>
-    );
-  }
-  if (space.status === 'error') {
-    return (
-      <div className="rounded-2xl border border-red-400/20 bg-red-500/5 p-4">
-        <p className="text-xs uppercase tracking-wide text-rose-300">Generation Failed</p>
-        <p className="mt-1 text-sm text-slate-300 font-mono truncate">{space.proposalId.slice(0, 16)}…</p>
-        {space.errorMessage && <p className="mt-1 text-xs text-rose-400">{space.errorMessage}</p>}
-      </div>
-    );
-  }
-  return (
-    <article className="group rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden transition hover:border-white/25 hover:bg-white/[0.05]">
-      {space.thumbUrl && (
-        <div className="relative h-40 w-full overflow-hidden bg-black/50">
-          <img src={space.thumbUrl} alt={space.proposalId.slice(0, 12)} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-          <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
-            <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${recBg(space.voteRecommendation)} ${recColor(space.voteRecommendation)}`}>{space.voteRecommendation}</span>
-            <span className={`rounded-full border px-2 py-0.5 text-xs ${sevBadge(maxSeverity(space))}`}>{maxSeverity(space).toUpperCase()}</span>
-          </div>
-        </div>
-      )}
-      <div className="p-4 space-y-3">
-        <div>
-          <p className="text-xs text-slate-400 font-mono truncate">{space.proposalId.slice(0, 24)}…</p>
-          <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">Scene: {space.sceneHash.slice(0, 18)}…</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Confidence:</span>
-          <div className="flex-1 h-1.5 rounded-full bg-white/10">
-            <div className="h-1.5 rounded-full bg-gradient-to-r from-cyan-300 to-indigo-300" style={{ width: `${space.confidence}%` }} />
-          </div>
-          <span className="text-xs text-slate-300">{space.confidence}%</span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {space.agentMarkers.map((m: AgentMarker, i: number) => (
-            <span key={i} className={`rounded px-1.5 py-0.5 text-[10px] border ${sevBadge(m.severity)}`} title={`${m.agentName} in ${m.zone}: ${m.rationale}`}>{m.agentName}</span>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {space.detectedZones.map((z: DetectedZone, i: number) => (
-            <span key={i} className="rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-300" title={z.meaning}>{z.zone}</span>
-          ))}
-        </div>
-        <button onClick={() => setExpanded(!expanded)} className="text-xs text-cyan-300 hover:text-cyan-200 transition">{expanded ? 'Hide Details' : 'Show Details'}</button>
-        {expanded && (
-          <div className="space-y-3 border-t border-white/10 pt-3">
-            <p className="text-xs text-slate-300 italic">{space.spatialSummary}</p>
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Agent Markers</p>
-              {space.agentMarkers.map((m: AgentMarker, i: number) => (
-                <div key={i} className="flex items-start gap-2 text-xs mb-1">
-                  <span className={`shrink-0 rounded px-1 py-0.5 border ${sevBadge(m.severity)}`}>{m.severity.toUpperCase()}</span>
-                  <span className="text-slate-300"><strong>{m.agentName}</strong> @ {m.zone} — {m.rationale}</span>
-                </div>
-              ))}
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">Detected Zones</p>
-              {space.detectedZones.map((z: DetectedZone, i: number) => (
-                <div key={i} className="text-xs text-slate-300 mb-1"><strong>{z.zone}</strong> ({z.riskDomain}) — {z.meaning}</div>
-              ))}
-            </div>
-            {space.fileUrl && (
-              <a href={space.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-block rounded-lg border border-violet-400/35 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20">Enter Proposal Space ↗</a>
-            )}
-            <div className="text-[10px] text-slate-500 flex gap-3">
-              <span>Created: {new Date(space.createdAt).toLocaleString()}</span>
-              <span>Visited: {new Date(space.visitedAt).toLocaleString()}</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </article>
   );
 }
 
@@ -2924,11 +2744,55 @@ function StatsRow({
   onCopy: (v: string, k: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', gap: 12, alignItems: 'center', cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
+        <span className={`badge ${row.outcome === 'BLOCK' || row.outcome === 'VETO' ? 'danger' : 'neutral'}`}>{row.outcome}</span>
+        <div>
+          <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-subtle)' }}>
+            {row.hash.slice(0, 12)}…{row.hash.slice(-6)}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-subtle)', marginTop: 2 }}>Block {row.block}</div>
+        </div>
+        <span className="badge neutral">{row.kind}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>{row.time}</span>
+        <button
+          className="icon-ghost"
+          onClick={(e) => { e.stopPropagation(); onCopy(row.hash, row.id); }}
+          title="Copy hash"
+        >
+          {copied ? <CheckCircle2 size={13} strokeWidth={1.5} style={{ color: 'var(--success)' }} /> : <Copy size={13} strokeWidth={1.5} />}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 8, paddingLeft: 8, fontSize: 12, color: 'var(--text-subtle)', borderLeft: '2px solid var(--border)' }}>
+          {row.details}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function Page() {
+  const [wagmiConfig] = useState(() =>
+    createConfig({
+      chains: [base, baseSepolia],
+      connectors: [
+        injected(),
+        coinbaseWallet({ appName: 'AgentSafe' }),
+        ...(process.env.NEXT_PUBLIC_WC_PROJECT_ID
+          ? [walletConnect({ projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID })]
+          : []),
+      ],
+      transports: {
+        [base.id]: http(),
+        [baseSepolia.id]: http(),
+      },
+    }),
+  );
+
+  const [queryClient] = useState(() => new QueryClient());
+
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
