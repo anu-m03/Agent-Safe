@@ -44,19 +44,19 @@ export default function StatsPage() {
   return (
     <div className="page">
       <header className="panel">
-        <p className="mono text-[12px] tracking-[0.08em] text-[var(--color-muted)]">PUBLIC / NO AUTH</p>
-        <h1 className="mt-3 text-[42px] leading-none">System Economics</h1>
+        <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">Live metrics</p>
+        <h1 className="mt-3 text-[38px] font-semibold tracking-[-0.03em] leading-tight text-[var(--color-text)]" style={{ fontFamily: 'var(--font-syne)' }}>Agent Economy</h1>
       </header>
 
       <section className="section-gap panel">
         <div className="grid gap-8 md:grid-cols-2">
           <div>
-            <p className="mono text-[12px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Lifetime Revenue</p>
-            <p className="mono mt-3 text-[44px] leading-none">{revenue.toFixed(2)} ETH</p>
+            <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">Lifetime revenue</p>
+            <p className="mt-3 text-[40px] font-semibold tracking-[-0.03em] leading-none text-[var(--color-text)]" style={{ fontFamily: 'var(--font-syne)' }}>{revenue.toFixed(2)} ETH</p>
           </div>
           <div className="border-l border-[var(--color-border)] pl-6 md:pl-8">
-            <p className="mono text-[12px] uppercase tracking-[0.08em] text-[var(--color-muted)]">Compute Cost</p>
-            <p className="mono mt-3 text-[44px] leading-none">{compute.toFixed(2)} ETH</p>
+            <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">Compute cost</p>
+            <p className="mt-3 text-[40px] font-semibold tracking-[-0.03em] leading-none text-[var(--color-text)]" style={{ fontFamily: 'var(--font-syne)' }}>{compute.toFixed(2)} ETH</p>
           </div>
         </div>
       </section>
@@ -64,19 +64,19 @@ export default function StatsPage() {
       <section className="section-gap panel">
         <div className="mb-6 flex items-center gap-2">
           <BarChart2 className="h-[16px] w-[16px] text-[var(--color-accent)]" strokeWidth={1.5} />
-          <h2 className="text-[28px]">Agent Runs Over Time</h2>
+          <h2 className="text-[24px] font-semibold tracking-[-0.02em]" style={{ fontFamily: 'var(--font-syne)' }}>Run volume by agent</h2>
         </div>
         <div className="grid gap-6 md:grid-cols-3">
           <div>
-            <p className="mono text-[12px] tracking-[0.08em] text-[var(--color-muted)]">MEV PROTECTION</p>
+            <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">MEV protection</p>
             <MiniLine values={AGENT_SERIES.mev} />
           </div>
           <div>
-            <p className="mono text-[12px] tracking-[0.08em] text-[var(--color-muted)]">GOVERNANCE AGENT</p>
+            <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">Governance agent</p>
             <MiniLine values={AGENT_SERIES.governance} />
           </div>
           <div>
-            <p className="mono text-[12px] tracking-[0.08em] text-[var(--color-muted)]">APPROVAL GUARD</p>
+            <p className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--color-subtle)]">Approval guard</p>
             <MiniLine values={AGENT_SERIES.approval} />
           </div>
         </div>
@@ -85,17 +85,17 @@ export default function StatsPage() {
       <section className="section-gap panel">
         <div className="mb-4 flex items-center gap-2">
           <DollarSign className="h-[16px] w-[16px] text-[var(--color-accent)]" strokeWidth={1.5} />
-          <h2 className="text-[28px]">System Autonomy</h2>
+          <h2 className="text-[24px] font-semibold tracking-[-0.02em]" style={{ fontFamily: 'var(--font-syne)' }}>Autonomy coverage</h2>
         </div>
-        <p className="text-[14px] text-[var(--color-muted)]">Revenue coverage of compute cost.</p>
+        <p className="text-[14px] leading-relaxed text-[var(--color-muted)]">How much execution cost is covered by generated revenue.</p>
         <div className="mt-4 h-3 w-full rounded-[4px] border border-[var(--color-border)] bg-[var(--color-surface)]">
           <div className="h-full rounded-[3px] bg-[var(--color-success)]" style={{ width: `${autonomyPct}%` }} />
         </div>
-        <p className="mono mt-3 text-[12px] text-[var(--color-muted)]">{autonomyPct.toFixed(1)}% coverage</p>
+        <p className="mono mt-3 text-[12px] text-[var(--color-subtle)]">{autonomyPct.toFixed(1)}% coverage</p>
       </section>
 
       <section className="section-gap panel">
-        <h2 className="text-[28px]">ERC-8021 Attribution</h2>
+        <h2 className="text-[24px] font-semibold tracking-[-0.02em]" style={{ fontFamily: 'var(--font-syne)' }}>ERC-8021 attribution ledger</h2>
         <div className="mt-6 overflow-x-auto">
           <table className="table min-w-[720px]">
             <thead>
