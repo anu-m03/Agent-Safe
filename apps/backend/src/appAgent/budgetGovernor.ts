@@ -44,6 +44,19 @@ export function getBudgetState(): BudgetState {
 }
 
 /**
+ * Reset budget state to defaults. Only for tests (VITEST env set by Vitest).
+ */
+export function __testResetBudgetState(): void {
+  if (!process.env.VITEST) return;
+  state = {
+    treasuryUsd: 500,
+    dailyBurnUsd: 0,
+    lastResetDate: new Date().toISOString().slice(0, 10),
+    currentApr: 8,
+  };
+}
+
+/**
  * Set treasury and APR (e.g. from Yield Engine / Uniswap agent).
  * Base-native: low fees allow frequent updates.
  */

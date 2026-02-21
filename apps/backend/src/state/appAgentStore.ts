@@ -129,3 +129,10 @@ export function getBudgetRemaining(): number {
   resetDailyBurnIfNeeded();
   return Math.max(0, GLOBAL_BURN_LIMIT - globalBurnToday);
 }
+
+/** Reset burn state for tests (only when VITEST is set). */
+export function __testResetBurnState(): void {
+  if (!process.env.VITEST) return;
+  globalBurnToday = 0;
+  lastBurnResetDate = new Date().toISOString().slice(0, 10);
+}
