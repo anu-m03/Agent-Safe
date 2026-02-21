@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getHealth, getStatus, getProposals, type HealthResponse, type StatusResponse } from '@/services/backendClient';
+import {
+  getHealth,
+  getStatus,
+  getProposals,
+  getAnalyticsSummary,
+  type HealthResponse,
+  type StatusResponse,
+  type AnalyticsSummaryResponse,
+} from '@/services/backendClient';
 import { StatusCard } from '@/components/StatusCard';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import Link from 'next/link';
@@ -10,6 +18,7 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [proposalCount, setProposalCount] = useState<number | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedBuilderCode, setCopiedBuilderCode] = useState(false);
@@ -21,10 +30,16 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [h, s, p] = await Promise.all([getHealth(), getStatus(), getProposals()]);
+    const [h, s, p, a] = await Promise.all([
+      getHealth(),
+      getStatus(),
+      getProposals(),
+      getAnalyticsSummary(),
+    ]);
     if (h.ok) setHealth(h.data); else setError(h.error);
     if (s.ok) setStatus(s.data);
     if (p.ok) setProposalCount(p.data.proposals.length);
+    if (a.ok) setAnalytics(a.data);
     setLoading(false);
   }, []);
 
@@ -165,29 +180,32 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Autonomy Status Widget */}
+      <AutonomyWidget analytics={analytics} loading={loading} />
+
       {/* Quick Actions */}
       <div>
         <h3 className="mb-4 text-lg font-semibold text-white">Quick Actions</h3>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <QuickLink
+            href="/stats"
+            title="Stats"
+            description="Agent performance, cost, revenue & autonomy"
+            icon="📊"
+            delay={400}
+          />
+          <QuickLink
             href="/defense"
             title="Defense"
             description="Evaluate transactions through SwarmGuard"
             icon="🛡️"
-            delay={400}
+            delay={500}
           />
           <QuickLink
             href="/governance"
             title="Governance"
             description="DAO proposals + AI recommendations"
             icon="🗳️"
-            delay={500}
-          />
-          <QuickLink
-            href="/policy"
-            title="Policy"
-            description="View swarm rules & simulate consensus"
-            icon="📜"
             delay={600}
           />
           <QuickLink
@@ -365,6 +383,106 @@ function QuickLink({
       {/* Hover gradient */}
       <div className="absolute inset-0 bg-gradient-to-r from-green-500/0 via-blue-500/0 to-purple-500/0 opacity-0 transition-opacity duration-300 group-hover:from-green-500/5 group-hover:via-blue-500/5 group-hover:to-purple-500/5 group-hover:opacity-100" />
     </Link>
+  );
+}
+
+function AutonomyWidget({
+  analytics,
+  loading,
+}: {
+  analytics: AnalyticsSummaryResponse | null;
+  loading: boolean;
+}) {
+  if (loading && !analytics) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-safe-card p-5">
+        <div className="skeleton mb-3 h-4 w-40" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="skeleton h-16 rounded-lg" />
+          <div className="skeleton h-16 rounded-lg" />
+          <div className="skeleton h-16 rounded-lg" />
+          <div className="skeleton h-16 rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  const enabled = analytics !== null;
+  const runwayColor =
+    analytics?.runwayIndicator === 'PROFITABLE'
+      ? 'text-safe-green'
+      : analytics?.runwayIndicator === 'LOSS'
+        ? 'text-safe-red'
+        : 'text-safe-yellow';
+  const borderAccent = enabled ? 'border-indigo-900/40' : 'border-gray-800';
+
+  return (
+    <div className={`rounded-xl border ${borderAccent} bg-safe-card p-5`}>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-white">Autonomy Loop</h3>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+              enabled
+                ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                : 'border-gray-700 bg-gray-800 text-gray-500'
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                enabled
+                  ? 'animate-pulse bg-safe-green shadow-lg shadow-green-500/50'
+                  : 'bg-gray-600'
+              }`}
+            />
+            {enabled ? 'CONNECTED' : 'OFFLINE'}
+          </span>
+        </div>
+        <Link
+          href="/stats"
+          className="rounded-lg border border-indigo-800/40 bg-indigo-900/20 px-3 py-1 text-xs font-medium text-indigo-200 transition-colors hover:border-indigo-700 hover:bg-indigo-900/30"
+        >
+          Full Stats →
+        </Link>
+      </div>
+
+      {analytics ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <MiniStat label="Cycles (24h)" value={String(analytics.cycles24h)} />
+          <MiniStat
+            label="Success Rate"
+            value={`${(analytics.executionSuccessRate * 100).toFixed(0)}%`}
+          />
+          <MiniStat label="Actions / Day" value={String(analytics.actionsPerDay)} />
+          <MiniStat
+            label="Profitability"
+            value={analytics.runwayIndicator}
+            valueColor={runwayColor}
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500">
+          Analytics unavailable — start the backend to see live metrics.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-800 bg-gray-900/50 px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+      <p className={`mt-1 text-lg font-bold ${valueColor ?? 'text-white'}`}>{value}</p>
+    </div>
   );
 }
 

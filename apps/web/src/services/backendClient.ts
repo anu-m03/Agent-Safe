@@ -68,6 +68,30 @@ async function request<T>(
 
 // ─── Health / Status ─────────────────────────────────────
 
+export interface HealthDeploymentConfigured {
+  agentSafeAccount: boolean;
+  agentSafeAccountMasked: string;
+  entryPoint: boolean;
+  entryPointMasked: string;
+  rpcUrl: boolean;
+  bundlerUrl: boolean;
+  allowedTokensCount: number;
+  allowedTargetsCount: number;
+}
+
+export interface HealthDeployment {
+  chainId: number;
+  strictMode: boolean;
+  configured: HealthDeploymentConfigured;
+  error?: string;
+}
+
+export interface HealthFeatures {
+  swapRebalance: boolean;
+  sessionKeys: boolean;
+  mainnetStrict: boolean;
+}
+
 export interface HealthResponse {
   status: string;
   uptime: number;
@@ -76,6 +100,8 @@ export interface HealthResponse {
     kite: { ok: boolean; mode: string };
     snapshot: { ok: boolean; mode: string };
   };
+  deployment?: HealthDeployment;
+  features?: HealthFeatures;
 }
 
 export interface StatusResponse {
@@ -251,6 +277,67 @@ export function executeVote(voteId: string) {
     body: JSON.stringify({ voteId }),
   });
 }
+// ─── Analytics ───────────────────────────────────────────
+
+export interface AnalyticsSummaryResponse {
+  /** Total gas cost in wei (from EXECUTION_SUCCESS logs) */
+  gasSpentWei: string;
+  /** Total x402 spend in wei (from X402_PAYMENT logs) */
+  x402SpendWei: string;
+  /** Total revenue in wei (from REVENUE logs) */
+  revenueWei: string;
+  /** Revenue breakdown in wei by source */
+  revenueWeiBySource: {
+    x402: string;
+    performance_fee: string;
+  };
+  /** Total compute cost in wei = gas + model cost */
+  computeCostWei: string;
+  /** Optional model cost in wei; "0" when absent */
+  modelCostWei: string;
+  /** Net profit in wei = revenueWei - computeCostWei */
+  netProfitWei: string;
+  /** Profitability status derived from netProfitWei */
+  runwayIndicator: 'PROFITABLE' | 'BREAKEVEN' | 'LOSS';
+  /** Autonomy cycle results in last 24h */
+  cycles24h: number;
+  /** Execution success rate [0,1] from autonomy cycle results */
+  executionSuccessRate: number;
+  /** Execution actions in last 24h */
+  actionsLast24h: number;
+  /** Same as actionsLast24h */
+  actionsPerDay: number;
+  /** Execution actions total */
+  actionsTotal: number;
+  /** Cost per execution action in wei, or "0" if no actions */
+  costPerActionWei: string;
+  /** Net runway in wei: revenueWei - gasSpentWei */
+  netRunwayWei: string;
+  /** All metrics derived from log event counts */
+  _source: 'logs';
+}
+
+export function getAnalyticsSummary() {
+  return request<AnalyticsSummaryResponse>('/api/analytics/summary');
+}
+
+// ─── Autonomy Status ────────────────────────────────────
+
+export interface AutonomyStatusResponse {
+  enabled: boolean;
+  intervalMs: number;
+  swapper: string | null;
+  smartAccount: string | null;
+  sessionActive: boolean;
+  sessionExpiresIn: number | null;
+  lastCycleAt: string | null;
+  cycleCount: number;
+}
+
+export function getAutonomyStatus() {
+  return request<AutonomyStatusResponse>('/api/analytics/autonomy');
+}
+
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {

@@ -1,4 +1,5 @@
 import { getSession, sessionSummary } from '../../state/sessionStore.js';
+import { buildPerformanceFeeAccounting } from './performanceFee.js';
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const MIN_INTERVAL_MS = 1_000;
@@ -160,6 +161,9 @@ export function startAutonomyLoop(options: StartAutonomyLoopOptions): AutonomyLo
       const reason = typeof payload.reason === 'string' ? payload.reason : undefined;
       const decisionAction =
         decision && typeof decision.action === 'string' ? decision.action : undefined;
+      const realizedYieldWei =
+        typeof payload.realizedYieldWei === 'string' ? payload.realizedYieldWei : '0';
+      const performanceFee = buildPerformanceFeeAccounting(cycleId, realizedYieldWei);
 
       logEvent({
         ts: nowIso(),
@@ -176,6 +180,7 @@ export function startAutonomyLoop(options: StartAutonomyLoopOptions): AutonomyLo
           typeof payload.gasCostWei === 'string' ? (payload.gasCostWei as string) : null,
         routeType:
           typeof payload.routeType === 'string' ? (payload.routeType as string) : null,
+        performanceFee,
         session: sessionSummary(session),
       });
     } catch (err) {

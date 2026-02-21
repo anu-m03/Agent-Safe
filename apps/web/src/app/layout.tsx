@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import './globals.css';
 import { Providers } from '@/components/Providers';
-import { ConnectButton } from '@/components/ConnectButton';
+import { ConnectButton, OperatorStatus } from '@/components/ConnectButton';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -34,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <MobileNavLink href="/spatial-atlas" active={isActive('/spatial-atlas')}>Spatial Atlas</MobileNavLink>
               <MobileNavLink href="/policy" active={isActive('/policy')}>Policy</MobileNavLink>
               <MobileNavLink href="/integrations" active={isActive('/integrations')}>Integrations</MobileNavLink>
+              <MobileNavLink href="/stats" active={isActive('/stats')}>Stats</MobileNavLink>
             </nav>
           </header>
 
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/spatial-atlas" active={isActive('/spatial-atlas')}>Spatial Atlas</NavLink>
               <NavLink href="/policy" active={isActive('/policy')}>Policy</NavLink>
               <NavLink href="/integrations" active={isActive('/integrations')}>Integrations</NavLink>
+              <NavLink href="/stats" active={isActive('/stats')}>Stats</NavLink>
 
               <div className="my-3 border-t border-white/10" />
 
@@ -67,15 +69,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/policies" active={isActive('/policies')}>Settings</NavLink>
             </nav>
 
-            {/* Wallet + Status */}
+            {/* Wallet + Operator Status */}
             <div className="absolute bottom-6 left-6 right-6 space-y-3">
               <ConnectButton />
-              <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-300 shadow-lg shadow-emerald-400/50" />
-                  <span className="text-xs font-medium text-emerald-200">System Online</span>
-                </div>
-              </div>
+              <OperatorStatus />
             </div>
           </aside>
 
