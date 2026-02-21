@@ -255,6 +255,13 @@ export default function DashboardPage() {
             icon="🔗"
             delay={700}
           />
+          <QuickLink
+            href="/uniswap"
+            title="Uniswap Yield"
+            description="Yield dashboard & position overview"
+            icon="📈"
+            delay={800}
+          />
         </div>
       </div>
 

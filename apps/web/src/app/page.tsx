@@ -4,33 +4,72 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSpatialAtlas, getAppEvolutionAtlas, seedTestApp } from '@/services/backendClient';
 import type { AppSpatialMemory, AppSpatialMarker, AppSpatialZone } from '@/services/backendClient';
 import type { SpatialMemory, AgentMarker, DetectedZone } from '@agent-safe/shared';
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
   AlertTriangle,
-  ArrowRightLeft,
-  Ban,
+  ArrowRight,
   BarChart3,
   Bot,
   CheckCircle2,
-  Clock3,
+  ChevronDown,
+  Code2,
   Copy,
-  ExternalLink,
+  DollarSign,
+  Download,
   Eye,
-  FileText,
+  FlaskConical,
+  Gauge,
   Globe,
-  HeartPulse,
-  Layers,
+  HandCoins,
+  Lightbulb,
+  Loader2,
   LogOut,
   Moon,
-  Play,
   Radio,
+  Rocket,
+  Rss,
+  ScanLine,
+  Settings,
   ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
   Sun,
-  Vote,
+  Users,
+  Vault,
   Wallet,
   XCircle,
 } from 'lucide-react';
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import { Syne, DM_Sans, JetBrains_Mono } from 'next/font/google';
+import { createConfig, WagmiProvider, useAccount, useConnect, useDisconnect } from 'wagmi';
+import { base } from 'wagmi/chains';
+import { coinbaseWallet, injected, walletConnect } from 'wagmi/connectors';
+import { http } from 'viem';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Highlight, themes } from 'prism-react-renderer';
+
+const syne = Syne({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-syne' });
+const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-dm' });
+const jetbrains = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-jet' });
+
+const queryClient = new QueryClient();
+
+const wagmiConfig = createConfig({
+  chains: [base],
+  connectors: [
+    injected(),
+    coinbaseWallet({ appName: 'AgentSafe' }),
+    walletConnect({ projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'demo-project-id' }),
+  ],
+  transports: {
+    [base.id]: http(),
+  },
+  ssr: true,
+});
+
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+const SCRAMBLE_CHARS = '0123456789ABCDEF@#$%';
 
 type Theme = 'dark' | 'light';
 type View = 'landing' | 'dashboard' | 'approval' | 'governance' | 'liquidation' | 'stats' | 'spatial';
@@ -45,33 +84,94 @@ type Particle = {
   cluster: 0 | 1 | 2;
   phase: number;
 };
+type Tab = 'agent' | 'stats' | 'settings';
+type Verdict = 'DEPLOYED' | 'BLOCKED' | 'REJECTED' | null;
+type ToastTone = 'accent' | 'pass' | 'block' | 'warning';
 
-type FeedItem = {
+type Toast = {
   id: string;
-  icon: 'danger' | 'success' | 'warning' | 'accent';
   text: string;
-  time: string;
+  tone: ToastTone;
+  ttl: number;
+  persistent?: boolean;
 };
 
-type ReviewItem = {
+type BudgetData = {
+  treasuryUsd?: number;
+  dailyBurnUsd?: number;
+  perAppCapUsd?: number;
+  totalSpentUsd?: number;
+  runwayDays?: number;
+};
+
+type AppRow = {
+  id?: string;
+  ideaId?: string;
+  status?: string;
+  templateId?: string;
+  title?: string;
+  idea?: {
+    title?: string;
+    description?: string;
+    templateId?: string;
+  };
+  metrics?: {
+    users?: number;
+    revenueUsd?: number;
+    impressions?: number;
+    revenue?: number;
+  };
+  deployedAt?: string;
+};
+
+type RunResponse = {
+  appId?: string;
+  status?: 'DEPLOYED' | 'BUDGET_BLOCKED' | 'REJECTED' | string;
+  idea?: {
+    title?: string;
+    description?: string;
+    templateId?: string;
+    capabilities?: string[];
+  };
+  budgetRemaining?: number;
+  pipelineLogs?: string[];
+};
+
+type PipelineResponse = {
+  success?: boolean;
+  verdict?: 'PASS' | 'BLOCK' | string;
+  idea?: {
+    title?: string;
+    description?: string;
+    templateId?: string;
+    capabilities?: string[];
+  };
+  safety?: {
+    verdict?: 'PASS' | 'BLOCK' | string;
+    riskScore?: number;
+    reason?: string;
+  };
+  deployAllowed?: boolean;
+  error?: string;
+  generatedDapp?: {
+    frontendLength?: number;
+    smartContractLength?: number;
+    structureNote?: string;
+    name?: string;
+  };
+};
+
+type CycleEntry = {
   id: string;
-  type: 'BLOCK' | 'REVIEW_REQUIRED' | 'REPAY';
-  text: string;
+  timestamp: string;
+  intent: string;
+  status: 'DEPLOYED' | 'BLOCKED' | 'REJECTED';
   risk: number;
-  state: 'idle' | 'flyout' | 'signed';
-};
-
-type Proposal = {
-  id: string;
+  budgetUsed: number;
   title: string;
-  source: 'Nouns DAO' | 'Snapshot' | 'Compound';
-  state: 'active' | 'voted' | 'vetoed';
-  risk: number;
-  signals: string[];
-  summary: string;
-  recommendation: 'FOR' | 'AGAINST' | 'ABSTAIN';
-  confidence: number;
-  vetoTime?: number;
+  reason?: string;
+  logs: string[];
+  description?: string;
 };
 
 const HEX_CHARS = '0123456789ABCDEF';
@@ -149,268 +249,152 @@ const areaData = [
 function cssValue(name: string) {
   if (typeof window === 'undefined') return 'rgb(255,255,255)';
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const payload = await res.text().catch(() => '');
+    throw new Error(payload || `${res.status}`);
+  }
+  return res.json();
 }
 
-function alpha(color: string, value: number) {
-  const c = color.trim();
-  if (c.startsWith('rgb')) {
-    const parts = c.replace(/rgba?\(/, '').replace(')', '').split(',').map((n) => Number(n.trim()));
-    return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${value})`;
-  }
-  if (c.startsWith('#')) {
-    const raw = c.slice(1);
-    const full = raw.length === 3 ? raw.split('').map((x) => `${x}${x}`).join('') : raw;
-    const r = parseInt(full.slice(0, 2), 16);
-    const g = parseInt(full.slice(2, 4), 16);
-    const b = parseInt(full.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${value})`;
-  }
-  return c;
-}
-
-function useScramble(finalText: string, duration: number, trigger: number) {
-  const [text, setText] = useState(finalText);
-
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
   useEffect(() => {
-    let step = 0;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduced(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return reduced;
+}
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setMobile(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return mobile;
+}
+
+function useScramble(target: string, duration: number, trigger: number) {
+  const [text, setText] = useState(target);
+  useEffect(() => {
+    if (!target) {
+      setText('');
+      return;
+    }
     const total = Math.max(1, Math.floor(duration / 30));
-    const tick = finalText.length / total;
+    const step = target.length / total;
+    let progress = 0;
     const id = window.setInterval(() => {
       setText(
-        finalText
+        target
           .split('')
-          .map((char, idx) => {
+          .map((char, index) => {
             if (char === ' ') return ' ';
-            if (idx < step) return finalText[idx];
-            return HEX_CHARS[Math.floor(Math.random() * HEX_CHARS.length)];
+            if (index < progress) return target[index];
+            return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
           })
           .join(''),
       );
-      step += tick;
-      if (step >= finalText.length) {
+      progress += step;
+      if (progress >= target.length) {
         window.clearInterval(id);
-        setText(finalText);
+        setText(target);
       }
     }, 30);
-
     return () => window.clearInterval(id);
-  }, [finalText, duration, trigger]);
-
+  }, [target, duration, trigger]);
   return text;
 }
 
-function useTypewriter(text: string, open: boolean) {
-  const [value, setValue] = useState('');
-
+function useCountUp(target: number, duration: number, trigger: number) {
+  const [value, setValue] = useState(0);
   useEffect(() => {
-    if (!open) {
-      setValue('');
-      return;
-    }
-    let i = 0;
-    const id = window.setInterval(() => {
-      i += 1;
-      setValue(text.slice(0, i));
-      if (i >= text.length) window.clearInterval(id);
-    }, 18);
-    return () => window.clearInterval(id);
-  }, [text, open]);
-
+    const start = performance.now();
+    const from = 0;
+    let raf = 0;
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const ratio = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - ratio, 3);
+      setValue(from + (target - from) * eased);
+      if (ratio < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration, trigger]);
   return value;
 }
 
-function MagneticButton({
-  children,
-  className,
-  onClick,
-  style,
-  enable,
-  disabled,
-}: {
-  children: React.ReactNode;
-  className: string;
-  onClick?: () => void;
-  style?: React.CSSProperties;
-  enable: boolean;
-  disabled?: boolean;
-}) {
-  const ref = useRef<HTMLButtonElement | null>(null);
-
-  function onMove(event: React.MouseEvent<HTMLButtonElement>) {
-    if (!enable || disabled || !ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = event.clientX - cx;
-    const dy = event.clientY - cy;
-    const d = Math.hypot(dx, dy);
-    if (d > 100) {
-      ref.current.style.transform = 'translate3d(0,0,0) scale(1.01)';
-      return;
-    }
-    ref.current.style.transform = `translate3d(${dx * 0.25}px, ${dy * 0.25}px, 0) scale(1.01)`;
-    ref.current.style.transition = 'transform 120ms ease';
-  }
-
-  function onLeave() {
-    if (!ref.current) return;
-    ref.current.style.transition = 'transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)';
-    ref.current.style.transform = 'translate3d(0,0,0) scale(1)';
-  }
-
-  return (
-    <button
-      ref={ref}
-      className={className}
-      onClick={onClick}
-      onMouseMove={onMove}
-      onMouseLeave={onLeave}
-      style={style}
-      disabled={disabled}
-      type="button"
-    >
-      {children}
-    </button>
-  );
+function truncateAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function Reveal({ children, index }: { children: React.ReactNode; index: number }) {
-  return (
-    <div className="reveal" style={{ transitionDelay: `${index * 60}ms` }}>
-      {children}
-    </div>
-  );
+function classNames(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(' ');
 }
 
-function RiskBar({ risk }: { risk: number }) {
-  const color = risk < 36 ? 'var(--success)' : risk < 70 ? 'var(--warning)' : 'var(--danger)';
-  return (
-    <div className="risk-track">
-      <div className="risk-fill" style={{ width: `${risk}%`, background: color }} />
-    </div>
-  );
-}
-
-function ProposalCard({
-  proposal,
-  open,
-  onToggle,
-  reduced,
-  enableMagnetic,
-  mobile,
-}: {
-  proposal: Proposal;
-  open: boolean;
-  onToggle: () => void;
-  reduced: boolean;
-  enableMagnetic: boolean;
-  mobile: boolean;
-}) {
-  const typed = useTypewriter(proposal.summary, open);
-  const [countdown, setCountdown] = useState(proposal.vetoTime || 0);
-  const score = useScramble(`${proposal.risk}`, 400, open ? 1 : 0);
+function LandingBarsCanvas({ active }: { active: boolean }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const mouse = useRef({ x: -1000, y: -1000 });
 
   useEffect(() => {
-    if (!open || !proposal.vetoTime) return;
-    const id = window.setInterval(() => setCountdown((v) => Math.max(v - 1, 0)), 60000);
-    return () => window.clearInterval(id);
-  }, [open, proposal.vetoTime]);
+    if (!active) return;
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let raf = 0;
+    let frame = 0;
 
-  const h = Math.floor(countdown / 60);
-  const m = countdown % 60;
-  const strip = proposal.state === 'active' ? 'var(--warning)' : proposal.state === 'voted' ? 'var(--success)' : 'var(--danger)';
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
 
-  return (
-    <div className="hud-card interactive trace" onMouseMove={cardGlow} style={{ borderLeft: `4px solid ${strip}` }}>
-      <div className="proposal-grid">
-        <div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span className="badge neutral">{proposal.source}</span>
-            <span className={`badge ${proposal.state === 'active' ? 'warning' : proposal.state === 'voted' ? 'success' : 'danger'}`}>{proposal.state}</span>
-          </div>
-          <h3 className="proposal-title">{proposal.title}</h3>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-            {proposal.signals.map((signal) => (
-              <span key={signal} className="badge warning">{signal}</span>
-            ))}
-          </div>
-        </div>
+    const onMove = (e: MouseEvent) => {
+      mouse.current = { x: e.clientX, y: e.clientY };
+    };
 
-        <div style={{ textAlign: mobile ? 'left' : 'right' }}>
-          <div className="mono" style={{ fontSize: 56, lineHeight: 1, fontWeight: 500, color: proposal.risk > 70 ? 'var(--danger)' : proposal.risk > 35 ? 'var(--warning)' : 'var(--success)' }}>
-            {score}
-          </div>
-          <div className="label" style={{ marginTop: 4 }}>RISK SCORE</div>
-          <div style={{ marginTop: 8 }}><RiskBar risk={proposal.risk} /></div>
-          <button className="btn-ghost" onClick={onToggle} style={{ marginTop: 12 }}>Analyze</button>
-        </div>
-      </div>
+    const loop = (t: number) => {
+      frame += 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const barWidth = 3;
+      const gap = 2;
+      const count = Math.ceil(canvas.width / (barWidth + gap));
+      for (let i = 0; i < count; i += 1) {
+        const x = i * (barWidth + gap);
+        const baseHeight =
+          20 +
+          Math.sin(i * 0.15 + t * 0.0008) * 15 +
+          Math.sin(i * 0.042 + t * 0.0005) * 35 +
+          Math.sin(i * 0.38) * 10;
 
-      <div className="expand-wrap" style={{ maxHeight: open ? 320 : 0 }}>
-        <div className="expand-inner">
-          <p className="type-summary">{reduced ? proposal.summary : typed}</p>
-          <div style={{ marginTop: 12 }}>
-            <span className={`badge ${proposal.recommendation === 'FOR' ? 'success' : proposal.recommendation === 'AGAINST' ? 'danger' : 'warning'}`}>
-              {proposal.recommendation}
-            </span>
-          </div>
-          <div style={{ marginTop: 10 }}><RiskBar risk={proposal.confidence} /></div>
-          {proposal.vetoTime && (
-            <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-              <Clock3 size={16} strokeWidth={1.5} />
-              <span className="mono">Veto closes in {`${h}h ${m.toString().padStart(2, '0')}m`}</span>
-            </div>
-          )}
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <MagneticButton className="btn-primary" enable={enableMagnetic && !mobile}>Queue Vote</MagneticButton>
-            <button className="btn-danger"><Ban size={16} strokeWidth={1.5} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />Veto</button>
-            <button className="btn-ghost" disabled={Boolean(proposal.vetoTime)}>Execute</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+        const dx = x - mouse.current.x;
+        const dy = canvas.height - mouse.current.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const bloom = Math.max(0, (220 - dist) / 220) * 90;
+        const finalHeight = Math.max(4, baseHeight + bloom);
 
-function cardGlow(event: React.MouseEvent<HTMLElement>) {
-  const el = event.currentTarget as HTMLElement;
-  const rect = el.getBoundingClientRect();
-  const x = ((event.clientX - rect.left) / rect.width) * 100;
-  const y = ((event.clientY - rect.top) / rect.height) * 100;
-  el.style.setProperty('--card-x', `${x}%`);
-  el.style.setProperty('--card-y', `${y}%`);
-}
+        const near180 = dist < 180;
+        const near80 = dist < 80;
 
-export default function HomePage() {
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [connected, setConnected] = useState(false);
-  const [view, setView] = useState<View>('landing');
-  const [copied, setCopied] = useState('');
-  const [reduced, setReduced] = useState(false);
-  const [mobile, setMobile] = useState(false);
-  const [hoverCapable, setHoverCapable] = useState(false);
-  const [analysisRunning, setAnalysisRunning] = useState(false);
-
-  const [feed, setFeed] = useState(feedSeed.slice(0, 6));
-  const [feedNew, setFeedNew] = useState<string>('');
-  const [review, setReview] = useState<ReviewItem[]>([
-    { id: 'r1', type: 'BLOCK', text: 'Uniswap approval request exceeds allowance policy cap.', risk: 91, state: 'idle' },
-    { id: 'r2', type: 'REVIEW_REQUIRED', text: 'Nouns proposal has treasury concentration warning.', risk: 67, state: 'idle' },
-    { id: 'r3', type: 'REPAY', text: 'Aave position crossed health threshold 1.2.', risk: 88, state: 'idle' },
-  ]);
-
-  const [proposalTab, setProposalTab] = useState<'all' | 'active' | 'vetoed' | 'voted'>('all');
-  const [proposalOpen, setProposalOpen] = useState('');
-  const [proposalQuery, setProposalQuery] = useState('');
-
-  const [kind, setKind] = useState<'APPROVAL' | 'LEND' | 'OTHER'>('APPROVAL');
-  const [target, setTarget] = useState('0x742d35Cc6634C0532925a3b8D4C9C8f3a1bE4c2');
-  const [calldata, setCalldata] = useState('0x3a8f92b4e1d0c6f8a2b5e9d3c7f1a4b8e2d6c0f9');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analyzed, setAnalyzed] = useState(false);
-  const [step, setStep] = useState(0);
-  const [consensus, setConsensus] = useState<'BLOCKED' | 'REVIEW' | 'SAFE'>('BLOCKED');
-  const [resultKey, setResultKey] = useState(0);
+        let color = 'rgba(255,255,255,0.055)';
+        if (document.documentElement.getAttribute('data-theme') === 'light') {
+          color = 'rgba(0,0,0,0.055)';
+        }
+        if (near180) color = 'rgba(255,109,0,0.22)';
+        if (near80) color = 'rgba(255,109,0,0.42)';
 
   const [bubbleOpen, setBubbleOpen] = useState(false);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -500,1021 +484,1594 @@ export default function HomePage() {
       return tabMatch && queryMatch;
     });
   }, [proposalQuery, proposalTab]);
+        ctx.fillStyle = color;
+        ctx.fillRect(x, canvas.height - finalHeight, barWidth, finalHeight);
+      }
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+      if (frame % 2 === 0) {
+        const grid = 4;
+        for (let y = 0; y < canvas.height; y += grid) {
+          for (let x = 0; x < canvas.width; x += grid) {
+            const dx = x - mouse.current.x;
+            const dy = y - mouse.current.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            let opacity = 0.007;
+            if (dist < 200) opacity += (1 - dist / 200) * 0.022;
+            ctx.fillStyle = dist < 200 ? `rgba(255,109,0,${opacity})` : `rgba(255,255,255,${opacity})`;
+            if (document.documentElement.getAttribute('data-theme') === 'light' && dist >= 200) {
+              ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+            }
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
 
-  useEffect(() => {
-    const mqReduce = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const mqHover = window.matchMedia('(hover: hover)');
-    const sync = () => {
-      setReduced(mqReduce.matches);
-      setHoverCapable(mqHover.matches);
-      setMobile(window.innerWidth < 768);
-    };
-    sync();
-    window.addEventListener('resize', sync);
-    mqReduce.addEventListener('change', sync);
-    mqHover.addEventListener('change', sync);
-    return () => {
-      window.removeEventListener('resize', sync);
-      mqReduce.removeEventListener('change', sync);
-      mqHover.removeEventListener('change', sync);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!copied) return;
-    const id = window.setTimeout(() => setCopied(''), 1500);
-    return () => window.clearTimeout(id);
-  }, [copied]);
-
-  useEffect(() => {
-    if (!connected) return;
-    function down(event: MouseEvent) {
-      if (!bubbleRef.current) return;
-      if (!bubbleRef.current.contains(event.target as Node)) setBubbleOpen(false);
-    }
-    document.addEventListener('mousedown', down);
-    return () => document.removeEventListener('mousedown', down);
-  }, [connected]);
-
-  useEffect(() => {
-    setHeadlineKey((k) => k + 1);
-  }, [appView]);
-
-  useEffect(() => {
-    const key = appView;
-    if (key === 'landing') return;
-    const next = window.setInterval(() => {
-      setFeed((prev) => {
-        const pick = feedSeed[Math.floor(Math.random() * feedSeed.length)];
-        const id = `${pick.id}-${Date.now()}`;
-        const entry: FeedItem = { ...pick, id };
-        setFeedNew(id);
-        window.setTimeout(() => setFeedNew(''), 400);
-        return [entry, ...prev].slice(0, 6);
-      });
-    }, 4000);
-    return () => window.clearInterval(next);
-  }, [appView]);
-
-  useEffect(() => {
-    const active = navItems.find((i) => i.key === view)?.key;
-    if (!active) return;
-    const btn = navButtons.current[active];
-    const wrap = navRef.current;
-    if (!btn || !wrap) return;
-    setIndicatorX(btn.offsetLeft + btn.offsetWidth / 2);
-  }, [view, mobile]);
-
-  useEffect(() => {
-    if (reduced || mobile) return;
-    let raf = 0;
-    const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const current = { x: target.x, y: target.y };
-
-    const onMove = (event: MouseEvent) => {
-      target.x = event.clientX;
-      target.y = event.clientY;
-    };
-
-    const loop = () => {
-      current.x += (target.x - current.x) * 0.18;
-      current.y += (target.y - current.y) * 0.18;
-      document.documentElement.style.setProperty('--mouse-x', `${current.x}px`);
-      document.documentElement.style.setProperty('--mouse-y', `${current.y}px`);
       raf = requestAnimationFrame(loop);
     };
 
-    window.addEventListener('mousemove', onMove, { passive: true });
+    resize();
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', onMove);
     raf = requestAnimationFrame(loop);
     return () => {
-      window.removeEventListener('mousemove', onMove);
       cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', onMove);
     };
-  }, [reduced, mobile]);
+  }, [active]);
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  return <canvas ref={ref} className="bars-canvas" aria-hidden />;
+}
+
+type CurvePoint = { x: number; y: number; phase: number };
+type Curve = { p0: CurvePoint; p1: CurvePoint; c0: CurvePoint; c1: CurvePoint; highlight: boolean };
+
+function FlowLinesCanvas({ active, runPulse }: { active: boolean; runPulse: number }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const mouse = useRef({ x: -1000, y: -1000 });
+  const curves = useRef<Curve[]>([]);
+
   useEffect(() => {
-    if (reduced || mobile) return;
-    if (!canvasRef.current) return;
+    if (!active) return;
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    const ctx: CanvasRenderingContext2D = context;
+    const curveCount = window.innerWidth < 768 ? 6 : 12;
+    const arr: Curve[] = [];
+    for (let i = 0; i < curveCount; i += 1) {
+      arr.push({
+        p0: { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, phase: Math.random() * Math.PI * 2 },
+        p1: { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, phase: Math.random() * Math.PI * 2 },
+        c0: { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, phase: Math.random() * Math.PI * 2 },
+        c1: { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, phase: Math.random() * Math.PI * 2 },
+        highlight: i < 2,
+      });
+    }
+    curves.current = arr;
 
-    const enabled = appView !== 'landing' || !connected;
-    if (!enabled) return;
-
-    const particles: Particle[] = [];
-    const total = 200;
-
-    let width = 0;
-    let height = 0;
     let raf = 0;
-
-    const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const clusters = [
-      { x: 0, y: 0 },
-      { x: 0, y: 0 },
-      { x: 0, y: 0 },
-    ];
-
-    const signal = { active: false, start: 0, from: { x: 0, y: 0 }, to: { x: 0, y: 0 }, duration: 800 };
-
-    function resize() {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      clusters[0] = { x: width * 0.28, y: height * 0.52 };
-      clusters[1] = { x: width * 0.72, y: height * 0.28 };
-      clusters[2] = { x: width * 0.55, y: height * 0.72 };
-    }
-
-    function init() {
-      particles.length = 0;
-      for (let i = 0; i < total; i += 1) {
-        const cluster = (i % 3) as 0 | 1 | 2;
-        const c = clusters[cluster];
-        particles.push({
-          x: c.x + (Math.random() - 0.5) * 180,
-          y: c.y + (Math.random() - 0.5) * 180,
-          vx: 0,
-          vy: 0,
-          radius: 1.5 + Math.random() * 1.5,
-          opacity: 0.3 + Math.random() * 0.5,
-          cluster,
-          phase: Math.random() * Math.PI * 2,
-        });
-      }
-    }
-
-    const onMove = (event: MouseEvent) => {
-      mouse.x = event.clientX;
-      mouse.y = event.clientY;
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    const onMove = (e: MouseEvent) => {
+      mouse.current = { x: e.clientX, y: e.clientY };
     };
 
-    const onResize = () => {
-      resize();
-      init();
+    const started = performance.now();
+
+    const loop = (t: number) => {
+      const pulseElapsed = t - started;
+      const pulseRaw = runPulse > 0 ? Math.max(0, 1 - Math.max(0, pulseElapsed - 2000) / 3000) : 0;
+      const boost = runPulse > 0 ? 1 + pulseRaw * 1.2 : 1;
+      const speed = runPulse > 0 && pulseElapsed < 2000 ? 1.5 : 1;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      curves.current.forEach((curve) => {
+        [curve.p0, curve.p1, curve.c0, curve.c1].forEach((p) => {
+          p.x += Math.sin(t * 0.00018 * speed + p.phase) * 0.4;
+          p.y += Math.cos(t * 0.00022 * speed + p.phase) * 0.3;
+        });
+
+        [curve.c0, curve.c1].forEach((cp) => {
+          const dx = mouse.current.x - cp.x;
+          const dy = mouse.current.y - cp.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 300) {
+            cp.x += dx * 0.008;
+            cp.y += dy * 0.008;
+          }
+        });
+
+        const baseOpacity = curve.highlight ? 0.055 : 0.028;
+        const lightFactor = document.documentElement.getAttribute('data-theme') === 'light' ? 0.5 : 1;
+        ctx.strokeStyle = `rgba(255,109,0,${baseOpacity * boost * lightFactor})`;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(curve.p0.x, curve.p0.y);
+        ctx.bezierCurveTo(curve.c0.x, curve.c0.y, curve.c1.x, curve.c1.y, curve.p1.x, curve.p1.y);
+        ctx.stroke();
+      });
+
+      raf = requestAnimationFrame(loop);
     };
 
     resize();
-    init();
-
-    window.addEventListener('mousemove', onMove, { passive: true });
-    window.addEventListener('resize', onResize);
-
-    const intensity = appView === 'landing' ? 1 : appView === 'dashboard' ? 0.7 : appView === 'stats' ? 0.5 : appView === 'approval' ? 0.6 : 0.55;
-
-    function draw(now: number) {
-      const clusterColors = [cssValue('--cluster-approval'), cssValue('--cluster-governance'), cssValue('--cluster-liquidation')];
-      const accent = cssValue('--accent');
-      const text = cssValue('--text-subtle');
-      const blobBase = theme === 'light' ? 0.02 : 0.04;
-      const pointScale = theme === 'light' ? 0.5 : 1;
-
-      ctx.clearRect(0, 0, width, height);
-
-      for (let i = 0; i < clusters.length; i += 1) {
-        const cx = clusters[i].x + Math.sin(now * 0.0001 + i) * 30;
-        const cy = clusters[i].y + Math.cos(now * 0.0001 + i * 2) * 30;
-        const d = Math.hypot(mouse.x - cx, mouse.y - cy);
-        const boost = d < 300 ? 0.04 : 0;
-        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 200);
-        gradient.addColorStop(0, alpha(clusterColors[i], (blobBase + boost) * intensity));
-        gradient.addColorStop(1, alpha(clusterColors[i], 0));
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 200, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      for (let i = 0; i < particles.length; i += 1) {
-        const p = particles[i];
-        const c = clusters[p.cluster];
-
-        p.x += Math.cos(p.phase + now * 0.0003) * 0.8 + (c.x - p.x) * 0.002;
-        p.y += Math.sin(p.phase + now * 0.0004) * 0.8 + (c.y - p.y) * 0.002;
-
-        const dx = p.x - mouse.x;
-        const dy = p.y - mouse.y;
-        const distance = Math.max(1, Math.hypot(dx, dy));
-        if (distance < 180) {
-          const force = ((180 - distance) / 180) * 2;
-          p.vx += (dx / distance) * force;
-          p.vy += (dy / distance) * force;
-        }
-
-        p.vx *= 0.92;
-        p.vy *= 0.92;
-        p.x += p.vx;
-        p.y += p.vy;
-
-        ctx.fillStyle = alpha(clusterColors[p.cluster], p.opacity * pointScale * intensity);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      for (let i = 0; i < particles.length; i += 1) {
-        for (let j = i + 1; j < particles.length; j += 1) {
-          const a = particles[i];
-          const b = particles[j];
-          if (a.cluster !== b.cluster) continue;
-          const d = Math.hypot(a.x - b.x, a.y - b.y);
-          if (d > 80) continue;
-          const opacity = (1 - d / 80) * 0.15 * intensity;
-          ctx.strokeStyle = alpha(clusterColors[a.cluster], opacity);
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-        }
-      }
-
-      if (analysisRunning && now % 4000 < 16 && !signal.active) {
-        const from = particles[Math.floor(Math.random() * particles.length)];
-        const toCandidates = particles.filter((p) => p.cluster !== from.cluster);
-        const to = toCandidates[Math.floor(Math.random() * toCandidates.length)];
-        signal.active = true;
-        signal.start = now;
-        signal.from = { x: from.x, y: from.y };
-        signal.to = { x: to.x, y: to.y };
-      }
-
-      if (signal.active) {
-        const progress = Math.min(1, (now - signal.start) / signal.duration);
-        const x = signal.from.x + (signal.to.x - signal.from.x) * progress;
-        const y = signal.from.y + (signal.to.y - signal.from.y) * progress;
-
-        ctx.strokeStyle = alpha(accent, 0.7 * intensity);
-        ctx.lineWidth = 1;
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = alpha(accent, 0.5);
-        ctx.beginPath();
-        ctx.moveTo(signal.from.x, signal.from.y);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = alpha(accent, 0.95);
-        ctx.beginPath();
-        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        if (progress >= 1) signal.active = false;
-      }
-
-      if (feed.length === 0) {
-        const y = ((now / 3000) % 1) * height;
-        ctx.fillStyle = alpha(text, 0.2 * intensity);
-        ctx.fillRect(0, y, width, 1);
-      }
-
-      raf = requestAnimationFrame(draw);
-    }
-
-    raf = requestAnimationFrame(draw);
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', onMove);
+    raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('resize', onResize);
     };
-  }, [appView, connected, reduced, mobile, theme, analysisRunning, feed.length]);
+  }, [active, runPulse]);
 
-  function copy(value: string, key: string) {
-    void navigator.clipboard.writeText(value);
-    setCopied(key);
-  }
+  return <canvas ref={ref} className="flow-canvas" aria-hidden />;
+}
 
-  function connect() {
-    setConnected(true);
-    setView('dashboard');
-  }
+function SparkBurst({ x, y, tone = 'accent' }: { x: number; y: number; tone?: 'accent' | 'pass' }) {
+  return (
+    <div className="spark-burst" style={{ left: x, top: y }}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <span key={i} className={classNames('spark', tone === 'pass' && 'spark-pass')} style={{ '--i': i } as React.CSSProperties} />
+      ))}
+    </div>
+  );
+}
 
-  function dismissReview(id: string) {
-    setReview((prev) => prev.map((item) => (item.id === id ? { ...item, state: 'flyout' } : item)));
-    window.setTimeout(() => setReview((prev) => prev.filter((item) => item.id !== id)), 280);
-  }
+function AppShellInternal() {
+  const reducedMotion = useReducedMotion();
+  const isMobile = useIsMobile();
+  const [theme, setTheme] = useState<Theme>('dark');
+  const [demoMode, setDemoMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('agent');
+  const [visionText, setVisionText] = useState('');
+  const [showConnectors, setShowConnectors] = useState(false);
+  const [connectorError, setConnectorError] = useState('');
+  const [isRunning, setIsRunning] = useState(false);
+  const [runPulse, setRunPulse] = useState(0);
+  const [pipelineVisible, setPipelineVisible] = useState(false);
+  const [outputVisible, setOutputVisible] = useState(false);
+  const [pipelineStage, setPipelineStage] = useState(0);
+  const [pipelineStates, setPipelineStates] = useState<Array<'pending' | 'active' | 'complete' | 'failed'>>(['pending', 'pending', 'pending', 'pending', 'pending']);
+  const [pipelineLogs, setPipelineLogs] = useState<string[]>([]);
+  const [verdict, setVerdict] = useState<Verdict>(null);
+  const [cycleLog, setCycleLog] = useState<CycleEntry[]>([]);
+  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+  const [focusVision, setFocusVision] = useState(false);
+  const [prox, setProx] = useState(0);
+  const [healthBannerDismissed, setHealthBannerDismissed] = useState(false);
+  const [codeExpanded, setCodeExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [walletCopied, setWalletCopied] = useState(false);
+  const [sparks, setSparks] = useState<Array<{ id: string; x: number; y: number; tone?: 'accent' | 'pass' }>>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [bubbleOpen, setBubbleOpen] = useState(false);
+  const [runTrigger, setRunTrigger] = useState(0);
+  const [wordmarkTrigger, setWordmarkTrigger] = useState(1);
 
-  function signReview(id: string) {
-    setReview((prev) => prev.map((item) => (item.id === id ? { ...item, state: 'signed' } : item)));
-    window.setTimeout(() => setReview((prev) => prev.filter((item) => item.id !== id)), 280);
-  }
+  const [pipelineResult, setPipelineResult] = useState<PipelineResponse | null>(null);
+  const [runResult, setRunResult] = useState<RunResponse | null>(null);
 
-  function analyzeApproval() {
-    setAnalyzing(true);
-    setAnalyzed(false);
-    setStep(0);
-    setAnalysisRunning(true);
-    setConsensus(kind === 'APPROVAL' ? 'BLOCKED' : kind === 'LEND' ? 'REVIEW' : 'SAFE');
+  const INDUSTRY_OPTIONS = ['DeFi', 'NFT', 'Gaming', 'Social', 'DAO / Governance', 'Infrastructure', 'RWA', 'Payments', 'Identity', 'Analytics'];
+  const [interestedIndustries, setInterestedIndustries] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const s = window.localStorage.getItem('agentsafe-interested-industries');
+      if (s) return JSON.parse(s) as string[];
+    } catch {}
+    return [];
+  });
 
-    window.setTimeout(() => {
-      setAnalyzing(false);
-      let s = 0;
-      const id = window.setInterval(() => {
-        s += 1;
-        setStep(s);
-        if (s === 3) {
-          window.clearInterval(id);
-          setAnalyzed(true);
-          setResultKey((k) => k + 1);
-          setAnalysisRunning(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const runInterval = useRef<number | null>(null);
+
+  const { address, isConnected } = useAccount();
+  const { connect, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const qc = useQueryClient();
+
+  const walletAddress = demoMode ? '0x0000000000000000000000000000000000000001' : address || '';
+  const onApp = Boolean(walletAddress) && (isConnected || demoMode);
+
+  const healthQuery = useQuery({
+    queryKey: ['health'],
+    queryFn: () => api<{ status: string }>('/health'),
+    refetchInterval: 30_000,
+  });
+
+  const budgetQuery = useQuery({
+    queryKey: ['budget', walletAddress],
+    queryFn: () => api<BudgetData>('/api/app-agent/budget'),
+    enabled: Boolean(walletAddress),
+  });
+
+  const appsQuery = useQuery({
+    queryKey: ['apps', walletAddress],
+    queryFn: () => api<{ apps: AppRow[] }>('/api/app-agent/apps'),
+    enabled: Boolean(walletAddress),
+    refetchInterval: 15_000,
+  });
+
+  const addToast = useCallback((text: string, tone: ToastTone, ttl = 3500, persistent = false) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, text, tone, ttl, persistent }]);
+    if (!persistent) {
+      window.setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, ttl);
+    }
+  }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('agentsafe-theme');
+    if (saved === 'light' || saved === 'dark') {
+      setTheme(saved);
+      document.documentElement.setAttribute('data-theme', saved);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    window.localStorage.setItem('agentsafe-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('agentsafe-interested-industries', JSON.stringify(interestedIndustries));
+    } catch {}
+  }, [interestedIndustries]);
+
+  const toggleIndustry = (industry: string) => {
+    setInterestedIndustries((prev) =>
+      prev.includes(industry) ? prev.filter((i) => i !== industry) : [...prev, industry],
+    );
+  };
+
+  useEffect(() => {
+    if (isConnected && address) {
+      api('/api/app-agent/init', {
+        method: 'POST',
+        body: JSON.stringify({ walletAddress: address }),
+      }).catch(() => {});
+      addToast('Wallet connected', 'pass', 2500);
+      setShowConnectors(false);
+    }
+  }, [isConnected, address, addToast]);
+
+  useEffect(() => {
+    if (!isConnected && !demoMode) {
+      setVisionText('');
+      setCycleLog([]);
+      setOutputVisible(false);
+      setPipelineVisible(false);
+    }
+  }, [isConnected, demoMode]);
+
+  useEffect(() => {
+    if (demoMode) {
+      api('/api/app-agent/init', {
+        method: 'POST',
+        body: JSON.stringify({ walletAddress: '0x0000000000000000000000000000000000000001' }),
+      }).catch(() => {});
+      addToast('Demo mode - using test wallet', 'warning');
+    }
+  }, [demoMode, addToast]);
+
+  useEffect(() => {
+    if (healthQuery.isError) {
+      addToast('Backend offline - start :4000', 'block', 0, true);
+    }
+  }, [healthQuery.isError, addToast]);
+
+  useEffect(() => {
+    return () => {
+      if (runInterval.current) window.clearInterval(runInterval.current);
+    };
+  }, []);
+
+  const wordmark = useScramble('AgentSafe', 1000, wordmarkTrigger);
+  const resultWord = useScramble(verdict || '', 800, runTrigger);
+
+  const countRuns = useCountUp(cycleLog.length, 700, runTrigger + cycleLog.length);
+  const deployedCount = useCountUp(cycleLog.filter((c) => c.status === 'DEPLOYED').length, 700, runTrigger + 2);
+  const totalBudgetUsed = cycleLog.reduce((sum, c) => sum + c.budgetUsed, 0);
+  const budgetCount = useCountUp(totalBudgetUsed, 800, runTrigger + 3);
+
+  const onThemeToggle = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+
+  const onDisconnect = () => {
+    disconnect();
+    setDemoMode(false);
+    setVisionText('');
+    setCycleLog([]);
+    setOutputVisible(false);
+    setPipelineVisible(false);
+    setRunResult(null);
+    setPipelineResult(null);
+  };
+
+  const onTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value.slice(0, 500);
+    setVisionText(value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.max(160, e.target.scrollHeight)}px`;
+  };
+
+  const runMutation = useMutation({
+    mutationFn: async (intent: string) => {
+      const [pipeline, runCycle] = await Promise.all([
+        fetch('/api/app-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIntent: intent }),
+        }).then(async (res) => {
+          const json = await res.json();
+          if (!res.ok) throw new Error(json?.error || `${res.status}`);
+          return json as PipelineResponse;
+        }),
+        api<RunResponse>('/api/app-agent/run-cycle', {
+          method: 'POST',
+          body: JSON.stringify({ walletAddress, intent }),
+        }),
+      ]);
+      return { pipeline, runCycle };
+    },
+    onError: (err: Error) => {
+      addToast(`/api/app-agent failed: ${err.message}`, 'block', 5000);
+      setIsRunning(false);
+      if (runInterval.current) window.clearInterval(runInterval.current);
+    },
+    onSuccess: ({ pipeline, runCycle }) => {
+      setPipelineResult(pipeline);
+      setRunResult(runCycle);
+
+      const status = runCycle.status;
+      const nextStates: Array<'pending' | 'active' | 'complete' | 'failed'> = ['complete', 'complete', 'complete', 'complete', 'complete'];
+      let finalVerdict: Verdict = 'DEPLOYED';
+      if (status === 'BUDGET_BLOCKED') {
+        nextStates[3] = 'failed';
+        nextStates[4] = 'pending';
+        finalVerdict = 'BLOCKED';
+      }
+      if (status === 'REJECTED') {
+        nextStates[2] = 'failed';
+        nextStates[3] = 'pending';
+        nextStates[4] = 'pending';
+        finalVerdict = 'REJECTED';
+      }
+
+      setPipelineStates(nextStates);
+      setPipelineStage(5);
+      setVerdict(finalVerdict);
+      setRunTrigger((v) => v + 1);
+      setIsRunning(false);
+      setOutputVisible(true);
+
+      const safetyRisk = pipeline?.safety?.riskScore || 0;
+      const budgetBefore = budgetQuery.data?.treasuryUsd || 0;
+      const budgetAfter = runCycle.budgetRemaining || budgetBefore;
+      const budgetUsed = Math.max(0, budgetBefore - budgetAfter);
+      setPipelineLogs(runCycle.pipelineLogs || []);
+
+      const entry: CycleEntry = {
+        id: `${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        intent: visionText,
+        status: finalVerdict,
+        risk: safetyRisk,
+        budgetUsed,
+        title: runCycle.idea?.title || pipeline.idea?.title || 'Untitled app',
+        reason: pipeline.safety?.reason,
+        logs: runCycle.pipelineLogs || [],
+        description: pipeline.idea?.description || runCycle.idea?.description,
+      };
+      setCycleLog((prev) => [entry, ...prev]);
+
+      if (runInterval.current) {
+        window.clearInterval(runInterval.current);
+        runInterval.current = null;
+      }
+
+      if (pipeline.safety?.verdict === 'PASS') addToast(`Safety passed - risk ${safetyRisk}/100`, 'pass');
+      if (pipeline.safety?.verdict === 'BLOCK') addToast(`Safety blocked - ${pipeline.safety?.reason || 'unknown reason'}`, 'block', 5000);
+      if (finalVerdict === 'DEPLOYED') addToast('App deployed - incubating', 'pass', 5000);
+      if (finalVerdict !== 'DEPLOYED') addToast(`Cycle blocked - ${pipeline.safety?.reason || finalVerdict}`, 'block', 5000);
+
+      qc.invalidateQueries({ queryKey: ['budget', walletAddress] });
+      qc.invalidateQueries({ queryKey: ['apps', walletAddress] });
+    },
+  });
+
+  const startRun = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!visionText.trim() || isRunning || (!isConnected && !demoMode)) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const id = `${Date.now()}`;
+    setSparks((prev) => [...prev, { id, x, y, tone: 'accent' }]);
+    window.setTimeout(() => setSparks((prev) => prev.filter((s) => s.id !== id)), 450);
+
+    setRunPulse(Date.now());
+    setPipelineVisible(true);
+    setOutputVisible(false);
+    setVerdict(null);
+    setPipelineLogs([]);
+    setPipelineStage(1);
+    setPipelineStates(['active', 'pending', 'pending', 'pending', 'pending']);
+    setIsRunning(true);
+
+    const stageNames = ['TRENDS', 'IDEA', 'SAFETY', 'BUDGET', 'DEPLOY'];
+    runInterval.current = window.setInterval(() => {
+      setPipelineStage((prev) => {
+        const next = Math.min(5, prev + 1);
+        setPipelineStates((old) => old.map((s, i) => {
+          if (i < next - 1) return 'complete';
+          if (i === next - 1 && next <= 5) return 'active';
+          return 'pending';
+        }));
+        const name = stageNames[Math.min(next - 1, stageNames.length - 1)];
+        addToast(`${name}...`, 'accent', 2000);
+        return next;
+      });
+    }, 1800);
+
+    runMutation.mutate(visionText.trim());
+  };
+
+  const stageIcons = [Rss, Lightbulb, ScanLine, Gauge, Rocket];
+  const stageNames = ['TRENDS', 'IDEA', 'SAFETY', 'BUDGET', 'DEPLOY'];
+
+  const outputIdea = runResult?.idea || pipelineResult?.idea;
+  const codeString =
+    pipelineResult?.generatedDapp?.structureNote
+      ? `// ${pipelineResult.generatedDapp.name || 'generated-app'}\n${pipelineResult.generatedDapp.structureNote}\n// frontend length: ${pipelineResult.generatedDapp.frontendLength || 0}\n// contract length: ${pipelineResult.generatedDapp.smartContractLength || 0}`
+      : '';
+
+  const budget = budgetQuery.data || {};
+  const perCap = budget.perAppCapUsd || 1;
+  const usedCycle = Math.max(0, perCap - (runResult?.budgetRemaining || perCap));
+  const usedPct = Math.min(100, (usedCycle / perCap) * 100);
+
+  const onCopyCode = async () => {
+    if (!codeString) return;
+    await navigator.clipboard.writeText(codeString);
+    setCopied(true);
+    addToast('Copied', 'accent', 2000);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  const onCopyWallet = async () => {
+    if (!walletAddress) return;
+    await navigator.clipboard.writeText(walletAddress);
+    setWalletCopied(true);
+    window.setTimeout(() => setWalletCopied(false), 1500);
+  };
+
+  const handleConnector = async (connector: (typeof connectors)[number]) => {
+    setConnectorError('');
+    try {
+      connect({ connector });
+    } catch (err) {
+      setConnectorError(err instanceof Error ? err.message : 'Connection failed');
+    }
+  };
+
+  const onPanelMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!panelRef.current || reducedMotion) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const d = Math.min(x, y, rect.width - x, rect.height - y);
+    const next = Math.max(0, Math.min(1, (100 - d) / 100));
+    setProx(next);
+  };
+
+  const onPanelLeave = () => setProx(0);
+
+  useEffect(() => {
+    if (isMobile || reducedMotion) return;
+    const magnets = Array.from(document.querySelectorAll<HTMLElement>('.magnet, .magnet-small'));
+    const handleMove = (e: MouseEvent) => {
+      magnets.forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = e.clientX - cx;
+        const dy = e.clientY - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const small = node.classList.contains('magnet-small');
+        const radius = small ? 50 : node.classList.contains('cta-btn') ? 90 : 120;
+        const factor = small ? 0.2 : node.classList.contains('cta-btn') ? 0.28 : 0.25;
+        if (dist <= radius) {
+          node.style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
+        } else {
+          node.style.transform = 'translate(0px, 0px)';
         }
-      }, 400);
-    }, 600);
-  }
+      });
+    };
+    const reset = () => {
+      magnets.forEach((node) => {
+        node.style.transform = 'translate(0px, 0px)';
+      });
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseout', reset);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseout', reset);
+      reset();
+    };
+  }, [isMobile, reducedMotion]);
+
+  useEffect(() => {
+    const glareNodes = Array.from(document.querySelectorAll<HTMLElement>('.glare, .output-card'));
+    const cleanups: Array<() => void> = [];
+    glareNodes.forEach((node) => {
+      const onMove = (e: MouseEvent) => {
+        const rect = node.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        node.style.setProperty('--gx', `${x}%`);
+        node.style.setProperty('--gy', `${y}%`);
+      };
+      node.addEventListener('mousemove', onMove);
+      cleanups.push(() => node.removeEventListener('mousemove', onMove));
+    });
+    return () => cleanups.forEach((fn) => fn());
+  }, [outputVisible, activeTab]);
+
+  useEffect(() => {
+    if (isMobile || reducedMotion) return;
+    const tiltNodes = Array.from(document.querySelectorAll<HTMLElement>('.tilt'));
+    const cleanups: Array<() => void> = [];
+    tiltNodes.forEach((node) => {
+      const onMove = (e: MouseEvent) => {
+        const rect = node.getBoundingClientRect();
+        const xPct = (e.clientX - rect.left) / rect.width;
+        const yPct = (e.clientY - rect.top) / rect.height;
+        const rx = (0.5 - yPct) * 8;
+        const ry = (xPct - 0.5) * 8;
+        node.style.transform = `perspective(600px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+      };
+      const onLeave = () => {
+        node.style.transform = 'perspective(600px) rotateX(0deg) rotateY(0deg)';
+      };
+      node.addEventListener('mousemove', onMove);
+      node.addEventListener('mouseleave', onLeave);
+      cleanups.push(() => {
+        node.removeEventListener('mousemove', onMove);
+        node.removeEventListener('mouseleave', onLeave);
+      });
+    });
+    return () => cleanups.forEach((fn) => fn());
+  }, [appsQuery.data?.apps?.length, isMobile, reducedMotion]);
+
+  const passCount = cycleLog.filter((c) => c.status === 'DEPLOYED').length;
+  const blockCount = cycleLog.length - passCount;
+  const passPct = cycleLog.length ? (passCount / cycleLog.length) * 100 : 0;
+
+  const categoryBreakdown = useMemo(() => {
+    const map = new Map<string, number>();
+    cycleLog.forEach((entry) => {
+      const first = entry.intent.split(':')[0].trim();
+      const key = ['DeFi', 'NFT', 'Analytics', 'Social', 'Mini-game'].includes(first) ? first : 'Other';
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+  }, [cycleLog]);
+
+  const pieColors: Record<string, string> = {
+    DeFi: 'var(--accent)',
+    NFT: 'var(--pass)',
+    Analytics: 'var(--warning)',
+    Social: 'var(--social)',
+    'Mini-game': 'var(--mini)',
+    Other: 'var(--text-subtle)',
+  };
+
+  const startDemo = () => {
+    setDemoMode(true);
+    setShowConnectors(false);
+  };
+
+  const isOffline = healthQuery.isError;
+  const healthState = healthQuery.data?.status === 'ok' ? 'ok' : healthQuery.data?.status === 'degraded' ? 'degraded' : 'offline';
+
+  const runDisabled = !visionText.trim() || isRunning || (!isConnected && !demoMode);
 
   return (
-    <>
+    <div className={classNames(syne.variable, dmSans.variable, jetbrains.variable, 'app-root')}>
+      {!onApp && !reducedMotion && !isMobile ? <LandingBarsCanvas active /> : null}
+      {onApp && !reducedMotion ? <FlowLinesCanvas active runPulse={runPulse} /> : null}
+
+      <header className="top-bar">
+        <div className="brand-small">AgentSafe</div>
+        {onApp ? (
+          <div className="net-pill">
+            <Globe size={12} strokeWidth={1.5} />
+            <span className={classNames('live-dot', healthState === 'degraded' && 'live-dot-warning', healthState === 'offline' && 'live-dot-block')} />
+            <span>Base Mainnet</span>
+          </div>
+        ) : null}
+        <div className="top-actions">
+          {onApp ? (
+            demoMode ? (
+              <>
+                <span className="demo-badge">DEMO</span>
+                {!isConnected ? (
+                  <button className="ghost-btn" onClick={() => setShowConnectors((v) => !v)}>
+                    Connect Wallet
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <button className="wallet-chip" onClick={onCopyWallet}>
+                  <span>{walletAddress ? truncateAddress(walletAddress) : 'No wallet'}</span>
+                  {walletCopied ? <CheckCircle2 size={14} strokeWidth={1.5} /> : <Copy size={14} strokeWidth={1.5} />}
+                </button>
+                <button className="icon-ghost" onClick={onDisconnect} aria-label="Disconnect">
+                  <LogOut size={16} strokeWidth={1.5} />
+                </button>
+              </>
+            )
+          ) : null}
+          <button className="icon-ghost" onClick={onThemeToggle} aria-label="Theme">
+            {theme === 'dark' ? <Moon size={16} strokeWidth={1.5} /> : <Sun size={16} strokeWidth={1.5} />}
+          </button>
+        </div>
+      </header>
+
+      {onApp && isOffline && !healthBannerDismissed ? (
+        <div className="offline-banner">
+          <AlertTriangle size={14} strokeWidth={1.5} />
+          <span>Backend offline - start the Express server on port 4000</span>
+          <button className="icon-ghost" onClick={() => setHealthBannerDismissed(true)}>
+            <XCircle size={14} strokeWidth={1.5} />
+          </button>
+        </div>
+      ) : null}
+
+      {!onApp ? (
+        <>
+          <main className="landing-main">
+            <section className="landing-text">
+              <h1 className={classNames('wordmark', wordmark === 'AgentSafe' && 'wordmark-ready')}>{wordmark}</h1>
+              <h2 className="tagline split">
+                <span>Autonomous apps.</span>
+                <span>Built from your vision.</span>
+              </h2>
+              <p className="desc">Connect your wallet. Describe your idea. Watch it deploy itself on Base.</p>
+
+              <div className="feature-pills">
+                <div className="pill-row"><Sparkles size={14} strokeWidth={1.5} /><span>Trend-aware idea generation</span></div>
+                <div className="pill-row"><ShieldCheck size={14} strokeWidth={1.5} /><span>Autonomous safety pipeline</span></div>
+                <div className="pill-row"><Rocket size={14} strokeWidth={1.5} /><span>Deploys to Base automatically</span></div>
+              </div>
+
+              <div className="connect-wrap">
+                <button className="cta-btn magnet" onClick={() => setShowConnectors((v) => !v)} disabled={isPending}>
+                  {isPending ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Wallet size={18} strokeWidth={1.5} />}
+                  <span>{isPending ? 'Connecting...' : 'Connect Wallet'}</span>
+                </button>
+
+                <div className={classNames('connector-list', showConnectors && 'connector-list-open')}>
+                  {connectors.slice(0, 3).map((connector, i) => (
+                    <button key={connector.uid} className="connector-item" onClick={() => handleConnector(connector)} style={{ animationDelay: `${i * 60}ms` }}>
+                      <span className="connector-icon" aria-hidden>
+                        {connector.name.includes('Coinbase') ? (
+                          <svg className="wallet-svg coinbase" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" fill="currentColor" />
+                            <path d="M15.6 9.5a4 4 0 1 0 0 5h-2.2a2 2 0 1 1 0-5h2.2Z" fill="var(--surface)" />
+                          </svg>
+                        ) : connector.name.includes('WalletConnect') ? (
+                          <svg className="wallet-svg wc" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M7.3 9.2a6.6 6.6 0 0 1 9.4 0l.3.3.3-.3a7 7 0 0 0-10 0l.3.3Z" fill="currentColor" />
+                            <path d="M9 10.9a4.2 4.2 0 0 1 6 0l.3.3.3-.3a4.6 4.6 0 0 0-6.6 0l.3.3Z" fill="currentColor" />
+                            <path d="m12 13.3 1.1 1.1L12 15.5l-1.1-1.1L12 13.3Z" fill="currentColor" />
+                          </svg>
+                        ) : (
+                          <svg className="wallet-svg metamask" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M3 12.2 12 3l9 9.2-9 5.3-9-5.3Z" fill="currentColor" />
+                            <path d="m3 13.8 9 7.2 9-7.2-9 5.3-9-5.3Z" fill="currentColor" opacity="0.82" />
+                          </svg>
+                        )}
+                      </span>
+                      <span>{connector.name.includes('Injected') ? 'MetaMask' : connector.name}</span>
+                    </button>
+                  ))}
+                  {connectorError ? <div className="connector-error">{connectorError}</div> : null}
+                </div>
+
+                <button className="demo-link" onClick={startDemo}>
+                  Try Demo <ArrowRight size={12} strokeWidth={1.5} />
+                </button>
+              </div>
+            </section>
+          </main>
+
+          <footer className="landing-bottom">
+            <div className="subtle-line"><span className="base-box" />Built on Base</div>
+            <div className="subtle-line">Powered by Claude + Uniswap</div>
+          </footer>
+        </>
+      ) : (
+        <main className="app-main">
+          {activeTab === 'agent' ? (
+            <section className="agent-col">
+              <div className="center-head">
+                <h2 className={classNames('vision-title', focusVision && 'vision-title-blur')}>What outcome do you want to see?</h2>
+                <p>Describe the app you want to exist in the world.</p>
+              </div>
+
+              <div
+                ref={panelRef}
+                className="panel vision-panel"
+                onMouseMove={onPanelMove}
+                onMouseLeave={onPanelLeave}
+                style={{ '--prox': prox } as React.CSSProperties}
+              >
+                <textarea
+                  ref={textareaRef}
+                  className="vision-input"
+                  value={visionText}
+                  onChange={onTextareaInput}
+                  onFocus={() => setFocusVision(true)}
+                  onBlur={() => setFocusVision(false)}
+                  placeholder="xyz"
+                />
+
+                <div className={classNames('char-count', visionText.length > 490 && 'char-danger', visionText.length > 400 && visionText.length <= 490 && 'char-warning')}>
+                  {visionText.length}/500
+                </div>
+              </div>
+
+              <button className="run-btn magnet" disabled={runDisabled} onClick={startRun}>
+                {isRunning ? <Loader2 className="spin" size={18} strokeWidth={1.5} /> : <Rocket size={18} strokeWidth={1.5} />}
+                <span>{isRunning ? 'Running pipeline...' : 'Run Agent Cycle'}</span>
+                {sparks.map((spark) => (
+                  <SparkBurst key={spark.id} x={spark.x} y={spark.y} tone={spark.tone} />
+                ))}
+              </button>
+
+              <section className={classNames('panel pipeline-panel', pipelineVisible && 'panel-show')}>
+                <div className="panel-head">
+                  <span>PIPELINE</span>
+                  <span className="mono-accent">{pipelineStage} / 5</span>
+                </div>
+
+                <div className="stage-row">
+                  {stageNames.map((name, idx) => {
+                    const Icon = stageIcons[idx];
+                    const state = pipelineStates[idx];
+                    return (
+                      <div key={name} className="stage-item">
+                        <div className={classNames('stage-node', `stage-${state}`, state === 'active' && 'electric')}>
+                          {state === 'complete' ? (
+                            <CheckCircle2 size={16} strokeWidth={1.5} />
+                          ) : state === 'failed' ? (
+                            <XCircle size={16} strokeWidth={1.5} />
+                          ) : state === 'active' ? (
+                            <Loader2 className="spin" size={16} strokeWidth={1.5} />
+                          ) : (
+                            <Icon size={16} strokeWidth={1.5} />
+                          )}
+                        </div>
+                        <div className="stage-name">{name}</div>
+                        <div className="stage-log">{pipelineLogs[idx] || ''}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className={classNames('panel output-panel', outputVisible && 'panel-show')}>
+                <div className={classNames('result-word', verdict === 'DEPLOYED' && 'result-pass', verdict === 'BLOCKED' && 'result-block', verdict === 'REJECTED' && 'result-warning')}>
+                  {resultWord}
+                </div>
+
+                <div className="output-grid">
+                  <article className="output-card glare">
+                    <header><Lightbulb size={14} strokeWidth={1.5} />VISION UNDERSTOOD</header>
+                    <p>{outputIdea?.description || 'No description returned from pipeline.'}</p>
+                  </article>
+
+                  <article className="output-card glare">
+                    <header><Sparkles size={14} strokeWidth={1.5} />GENERATED IDEA</header>
+                    <h4>{outputIdea?.title || 'No title'}</h4>
+                    <div className="template-badge">{outputIdea?.templateId || 'template: none'}</div>
+                    <p>{outputIdea?.description || 'No idea details were generated.'}</p>
+                    <div className="chip-wrap">
+                      {(outputIdea?.capabilities || []).slice(0, 6).map((cap) => (
+                        <span key={cap} className="cap-chip">{cap}</span>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="output-card glare">
+                    <header><ScanLine size={14} strokeWidth={1.5} />SAFETY CHECK</header>
+                    {(pipelineResult?.safety?.verdict || 'BLOCK') === 'PASS' ? (
+                      <>
+                        <div className="safety-pass"><ShieldCheck size={16} strokeWidth={1.5} />PASS</div>
+                        <div className="mono-line">Risk Score: {Math.round(pipelineResult?.safety?.riskScore || 0)}</div>
+                        <div className="check-lines">
+                          {(runResult?.pipelineLogs || ['Capability allowlist verified', 'Static policy checks complete', 'Budget envelope validated', 'Simulation passed', 'No governance dependency']).slice(0, 5).map((line) => (
+                            <div key={line}><CheckCircle2 size={14} strokeWidth={1.5} /><span>{line}</span></div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="safety-block"><ShieldAlert size={16} strokeWidth={1.5} />BLOCKED</div>
+                        <p>{pipelineResult?.safety?.reason || pipelineResult?.error || 'Safety policy blocked this cycle.'}</p>
+                      </>
+                    )}
+                  </article>
+
+                  <article className="output-card glare">
+                    <header><Gauge size={14} strokeWidth={1.5} />BUDGET GOVERNOR</header>
+                    <div className="gauge-track"><div className="gauge-fill" style={{ width: `${usedPct}%` }} /></div>
+                    <div className="gauge-labels">
+                      <span>${usedCycle.toFixed(2)} used</span>
+                      <span>${Math.max(0, perCap - usedCycle).toFixed(2)} remaining</span>
+                    </div>
+                    <div className="runway-line">
+                      <span className={classNames('runway', (budget.runwayDays || 0) > 14 && 'runway-pass', (budget.runwayDays || 0) < 7 && 'runway-block', (budget.runwayDays || 0) >= 7 && (budget.runwayDays || 0) <= 14 && 'runway-warning')}>Runway {Math.round(budget.runwayDays || 0)}d</span>
+                      <span>at ${Math.round(budget.dailyBurnUsd || 0)}/day</span>
+                    </div>
+                    <div className="mono-line"><Vault size={13} strokeWidth={1.5} />Treasury ${(budget.treasuryUsd || 0).toFixed(2)}</div>
+                  </article>
+                </div>
+
+                {codeString ? (
+                  <div className="code-wrap">
+                    <button className="code-head" onClick={() => setCodeExpanded((v) => !v)}>
+                      <span><Code2 size={14} strokeWidth={1.5} />GENERATED CODE</span>
+                      <span className="head-right">
+                        <span className="template-badge">{codeString.length} chars</span>
+                        <ChevronDown size={14} strokeWidth={1.5} className={classNames(codeExpanded && 'rot')} />
+                      </span>
+                    </button>
+                    <div className={classNames('code-panel', codeExpanded && 'code-panel-open')}>
+                      <div className="code-actions">
+                        <button className="icon-ghost" onClick={onCopyCode}>{copied ? <CheckCircle2 size={14} strokeWidth={1.5} /> : <Copy size={14} strokeWidth={1.5} />}</button>
+                        <button
+                          className="icon-ghost"
+                          onClick={() => {
+                            const blob = new Blob([codeString], { type: 'text/plain;charset=utf-8' });
+                            const href = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = href;
+                            a.download = 'app.jsx';
+                            a.click();
+                            URL.revokeObjectURL(href);
+                          }}
+                        >
+                          <Download size={14} strokeWidth={1.5} />
+                        </button>
+                      </div>
+                      <div className="code-scroll">
+                        <Highlight code={codeString} language="jsx" theme={theme === 'dark' ? themes.nightOwl : themes.github}>
+                          {({ className, style, tokens, getLineProps, getTokenProps }) => (
+                            <pre className={className} style={style}>
+                              {tokens.map((line, i) => (
+                                <div key={i} {...getLineProps({ line })}>
+                                  {line.map((token, key) => (
+                                    <span key={key} {...getTokenProps({ token })} />
+                                  ))}
+                                </div>
+                              ))}
+                            </pre>
+                          )}
+                        </Highlight>
+                      </div>
+                      {verdict === 'DEPLOYED' ? <p className="sim-note">Simulated - would deploy to Base if all checks pass.</p> : null}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="code-empty">Code generation skipped - safety check failed.</p>
+                )}
+              </section>
+
+              {appsQuery.data?.apps?.length ? (
+                <section className="cycle-section">
+                  <h3>INCUBATING APPS</h3>
+                  <div className={classNames('apps-grid', appsQuery.data.apps.length > 4 && 'apps-grid-list')}>
+                    {appsQuery.data.apps.map((app, idx) => {
+                      const users = app.metrics?.users || 0;
+                      const revenue = app.metrics?.revenueUsd || app.metrics?.revenue || 0;
+                      const impressions = app.metrics?.impressions || 0;
+                      const day = app.deployedAt ? Math.max(1, Math.floor((Date.now() - new Date(app.deployedAt).getTime()) / (1000 * 60 * 60 * 24))) : idx + 1;
+                      const status = app.status || 'INCUBATING';
+
+                      return (
+                        <article key={app.id || `${idx}`} className="app-card tilt">
+                          <div className={classNames('top-strip', status.includes('INCUBATING') && 'strip-pass', status.includes('HANDED') && 'strip-accent', status.includes('DROP') && 'strip-block')} />
+                          <div className="app-head">
+                            <h4>{app.idea?.title || app.title || 'Untitled App'}</h4>
+                            <span className="template-badge">{status}</span>
+                          </div>
+                          <p className="mono-time">Day {day} of 14</p>
+
+                          {status.includes('INCUBATING') ? (
+                            <div className="metric-stack">
+                              <div>
+                                <div className="metric-label">{users} / 50 users</div>
+                                <div className="metric-track"><div className="metric-fill" style={{ width: `${Math.min(100, (users / 50) * 100)}%` }} /></div>
+                              </div>
+                              <div>
+                                <div className="metric-label">${revenue} / $10</div>
+                                <div className="metric-track"><div className="metric-fill warning" style={{ width: `${Math.min(100, (revenue / 10) * 100)}%` }} /></div>
+                              </div>
+                              <div>
+                                <div className="metric-label">{impressions} / 500 impressions</div>
+                                <div className="metric-track"><div className="metric-fill block" style={{ width: `${Math.min(100, (impressions / 500) * 100)}%` }} /></div>
+                              </div>
+                            </div>
+                          ) : status.includes('HANDED') ? (
+                            <div className="handoff"><HandCoins size={16} strokeWidth={1.5} />Handed back</div>
+                          ) : (
+                            <div className="drop"><XCircle size={16} strokeWidth={1.5} />De-supported</div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeTab === 'stats' ? (
+            <section className="stats-col">
+              <div className="stats-hero">
+                <div><span className="hero-label">Total Runs</span><strong>{Math.round(countRuns)}</strong></div>
+                <div><span className="hero-label">Deployed</span><strong>{Math.round(deployedCount)}</strong></div>
+                <div><span className="hero-label">Budget Used</span><strong>${budgetCount.toFixed(2)}</strong></div>
+              </div>
+
+              <div className="pass-block">
+                <div className="pass-fill" style={{ width: `${passPct}%` }} />
+              </div>
+              <div className="pass-legend"><span>{passCount} PASS</span><span>{blockCount} BLOCK</span></div>
+
+              <div className="charts-grid">
+                <div className="panel glare">
+                  <h4>Budget per cycle</h4>
+                  {cycleLog.length > 1 ? (
+                    <div className="chart-wrap">
+                      <ResponsiveContainer width="100%" height={230}>
+                        <BarChart data={cycleLog.map((c, i) => ({ index: i + 1, budgetUsed: c.budgetUsed }))}>
+                          <XAxis dataKey="index" tick={{ fill: 'var(--text-subtle)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                          <YAxis hide />
+                          <Tooltip cursor={false} contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                          <Bar dataKey="budgetUsed" fill="var(--accent)" radius={6} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="chart-empty">Run more cycles to see data.</div>
+                  )}
+                </div>
+
+                <div className="panel glare">
+                  <h4>Category breakdown</h4>
+                  {categoryBreakdown.length > 1 ? (
+                    <>
+                      <div className="chart-wrap">
+                        <ResponsiveContainer width="100%" height={230}>
+                          <PieChart>
+                            <Pie data={categoryBreakdown} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80}>
+                              {categoryBreakdown.map((d) => (
+                                <Cell key={d.name} fill={pieColors[d.name] || 'var(--text-subtle)'} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="legend-row">
+                        {categoryBreakdown.map((d) => (
+                          <span key={d.name} className="legend-pill">{d.name}: {d.value}</span>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="chart-empty">Run more cycles to see data.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="panel budget-row">
+                <div><span>Treasury</span><strong>${Math.round(budget.treasuryUsd || 0)}</strong></div>
+                <div><span>Runway</span><strong>{Math.round(budget.runwayDays || 0)}d</strong></div>
+                <div><span>Daily Burn</span><strong>${Math.round(budget.dailyBurnUsd || 0)}</strong></div>
+                <div className="runway-track"><div className="runway-fill" style={{ width: `${Math.min(100, ((budget.runwayDays || 0) / 30) * 100)}%` }} /></div>
+              </div>
+
+              <div className="panel">
+                <h4>Apps</h4>
+                <div className="apps-table">
+                  <div className="table-head"><span>App Name</span><span>Template</span><span>Status</span><span>Users</span><span>Revenue</span><span>Days</span></div>
+                  {(appsQuery.data?.apps || []).map((app, idx) => (
+                    <div className="table-row" key={app.id || idx}>
+                      <span>{app.idea?.title || app.title || 'Untitled'}</span>
+                      <span>{app.idea?.templateId || app.templateId || '-'}</span>
+                      <span>{app.status || '-'}</span>
+                      <span>{app.metrics?.users || 0}</span>
+                      <span>${app.metrics?.revenueUsd || app.metrics?.revenue || 0}</span>
+                      <span>{app.deployedAt ? Math.max(1, Math.floor((Date.now() - new Date(app.deployedAt).getTime()) / (1000 * 60 * 60 * 24))) : idx + 1}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === 'settings' ? (
+            <section className="stats-col">
+              <div className="panel settings-panel">
+                <h4>Settings</h4>
+                <p>Wallet: {demoMode ? 'Demo wallet' : walletAddress ? truncateAddress(walletAddress) : 'Not connected'}</p>
+                <div className="settings-actions">
+                  <button className="ghost-btn" onClick={onThemeToggle}>{theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}</button>
+                  <button className="ghost-btn" onClick={() => { setDemoMode(false); onDisconnect(); }}>Reset Session</button>
+                </div>
+                <div className="mt-6">
+                  <h5 className="mb-3 text-sm font-semibold text-white">Industries / domains you&apos;re interested in</h5>
+                  <p className="mb-3 text-xs text-gray-500">Select the areas you want the agent to focus on when generating ideas.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {INDUSTRY_OPTIONS.map((industry) => (
+                      <button
+                        key={industry}
+                        type="button"
+                        onClick={() => toggleIndustry(industry)}
+                        className={classNames(
+                          'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                          interestedIndustries.includes(industry)
+                            ? 'border-[#ff6d00] bg-[#ff6d00]/20 text-[#ff6d00]'
+                            : 'border-gray-600 bg-gray-800/50 text-gray-400 hover:border-gray-500 hover:text-gray-300',
+                        )}
+                      >
+                        {industry}
+                      </button>
+                    ))}
+                  </div>
+                  {interestedIndustries.length > 0 && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      {interestedIndustries.length} selected: {interestedIndustries.join(', ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </main>
+      )}
+
+      {onApp ? (
+        <>
+          <div className="bubble-nav">
+            {[
+              { key: 'agent' as const, label: 'Agent', icon: Sparkles },
+              { key: 'stats' as const, label: 'Stats', icon: BarChart3 },
+              { key: 'settings' as const, label: 'Settings', icon: SlidersHorizontal },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.key;
+              return (
+                <button key={tab.key} className={classNames('bubble-tab', active && 'bubble-tab-active')} onClick={() => setActiveTab(tab.key)}>
+                  <Icon size={16} strokeWidth={1.5} />
+                  {active ? <span className="bubble-label">{tab.label}</span> : null}
+                  {active ? <span className="bubble-dot" /> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className={classNames('agent-bubble', bubbleOpen && 'agent-bubble-open')}>
+            <button className="agent-fab" onClick={() => setBubbleOpen((v) => !v)}>
+              <span className="ring" />
+              <span className="ring ring-delay" />
+              <Sparkles size={20} strokeWidth={1.5} />
+            </button>
+            <div className="agent-info-pill">{cycleLog.length} runs · ${totalBudgetUsed.toFixed(2)} used</div>
+            <div className="agent-panel">
+              <div className="agent-last">
+                {(cycleLog || []).slice(0, 3).map((c) => (
+                  <div key={c.id} className="agent-row">
+                    <span>{c.status}</span>
+                    <span>${c.budgetUsed.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <button className="cta-btn" onClick={() => { setActiveTab('agent'); textareaRef.current?.focus(); setBubbleOpen(false); }}>
+                Run New Cycle
+              </button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      <div className="toast-stack">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={classNames('toast', `toast-${toast.tone}`)}>
+            <div>{toast.text}</div>
+            {toast.persistent ? (
+              <button className="icon-ghost" onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}>
+                <XCircle size={14} strokeWidth={1.5} />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap');
-
-        @property --trace-angle {
-          syntax: '<angle>';
-          initial-value: 0deg;
-          inherits: false;
-        }
-
         :root {
-          --bg: #08080A;
-          --surface: #0F0F12;
+          --bg: #09090b;
+          --surface: #0f0f12;
           --surface-2: #161619;
-          --surface-3: #1E1E23;
-          --border: #242428;
-          --text: #F5F5F3;
-          --text-muted: #9A9A96;
-          --text-subtle: #5A5A58;
-          --accent: #FF775C;
-          --accent-dim: #CC5F47;
-          --accent-bright: #FF9580;
-          --accent-glow: rgba(255,119,92,0.20);
-          --accent-glow-lg: rgba(255,119,92,0.08);
-          --danger: #EF4444;
-          --danger-muted: rgba(239,68,68,0.12);
-          --success: #22C55E;
-          --success-muted: rgba(34,197,94,0.12);
-          --warning: #F59E0B;
-          --warning-muted: rgba(245,158,11,0.12);
-          --cluster-approval: #FF775C;
-          --cluster-governance: #A8A8FF;
-          --cluster-liquidation: #4ADE80;
-          --white: #FFFFFF;
-          --mouse-x: 50vw;
-          --mouse-y: 50vh;
+          --surface-3: #1e1e23;
+          --border: #27272c;
+          --border-muted: #1c1c21;
+          --text: #f5f5f3;
+          --text-muted: #9b9b98;
+          --text-subtle: #5a5a57;
+          --accent: #ff6d00;
+          --accent-dim: #cc5700;
+          --accent-bright: #ff8c33;
+          --accent-glow: rgba(255, 109, 0, 0.22);
+          --accent-glow-sm: rgba(255, 109, 0, 0.12);
+          --accent-glow-xs: rgba(255, 109, 0, 0.06);
+          --pass: #22c55e;
+          --pass-muted: rgba(34, 197, 94, 0.12);
+          --block: #ef4444;
+          --block-muted: rgba(239, 68, 68, 0.12);
+          --warning: #f59e0b;
+          --warning-muted: rgba(245, 158, 11, 0.12);
+          --base-blue: #0052ff;
+          --wallet-blue: #3b99fc;
+          --wallet-fox: #f6851b;
+          --social: #60a5fa;
+          --mini: #818cf8;
         }
 
         html[data-theme='light'] {
-          --bg: #F9F8F5;
-          --surface: #FFFFFF;
-          --surface-2: #F2F1EE;
-          --surface-3: #E8E7E3;
-          --border: #DDDBD6;
-          --text: #0A0A08;
-          --text-muted: #504E49;
-          --text-subtle: #9E9C96;
-          --accent: #E8603D;
-          --accent-dim: #C44F2E;
-          --accent-bright: #FF775C;
-          --accent-glow: rgba(232,96,61,0.18);
-          --accent-glow-lg: rgba(232,96,61,0.07);
-          --cluster-approval: #E8603D;
-          --cluster-governance: #8B8BCF;
-          --cluster-liquidation: #3FAF66;
+          --bg: #fafaf8;
+          --surface: #ffffff;
+          --surface-2: #f3f3f0;
+          --surface-3: #eaeae6;
+          --border: #e0e0dc;
+          --border-muted: #ebebeb;
+          --text: #0c0c0a;
+          --text-muted: #525250;
+          --text-subtle: #a0a09c;
+          --accent: #e55c00;
+          --accent-dim: #c24a00;
+          --accent-bright: #ff6d00;
+          --accent-glow: rgba(229, 92, 0, 0.18);
+          --accent-glow-sm: rgba(229, 92, 0, 0.1);
+          --accent-glow-xs: rgba(229, 92, 0, 0.05);
+          --pass: #16a34a;
+          --pass-muted: rgba(22, 163, 74, 0.1);
+          --block: #dc2626;
+          --block-muted: rgba(220, 38, 38, 0.08);
+          --warning: #d97706;
+          --warning-muted: rgba(217, 119, 6, 0.08);
+          --base-blue: #0052ff;
+          --wallet-blue: #3b99fc;
+          --wallet-fox: #f6851b;
+          --social: #60a5fa;
+          --mini: #818cf8;
         }
 
         * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
+        html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-dm); }
+        button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 
-        .canvas-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+        .app-root { min-height: 100vh; position: relative; background: var(--bg); color: var(--text); overflow-x: hidden; }
+        .bars-canvas, .flow-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
 
-        .app { min-height: 100vh; position: relative; z-index: 2; color: var(--text); }
-
-        .topbar {
-          position: fixed;
-          left: 0;
-          right: 0;
-          top: 0;
-          height: 52px;
-          z-index: 60;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0 16px;
-          pointer-events: none;
+        .top-bar {
+          height: 56px; position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+          display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 24px;
         }
+        .brand-small { font-family: var(--font-syne); font-weight: 700; font-size: 15px; }
+        .top-actions { justify-self: end; display: flex; gap: 8px; align-items: center; }
+        .net-pill { justify-self: center; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+        .live-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--pass); animation: pulse-dot 2s infinite; }
+        .live-dot-warning { background: var(--warning); }
+        .live-dot-block { background: var(--block); }
+        @keyframes pulse-dot { 0%,100%{transform:scale(1);opacity:.6} 50%{transform:scale(1.4);opacity:1} }
 
-        .topbar-inner {
-          width: 100%;
-          max-width: 1320px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          pointer-events: auto;
+        .icon-ghost, .ghost-btn {
+          height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px;
+          transition: transform 150ms ease, background-color 150ms ease;
         }
+        .icon-ghost { width: 34px; padding: 0; }
+        .icon-ghost:hover, .ghost-btn:hover { background: var(--surface-3); }
 
-        .wordmark { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
+        .wallet-chip { height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); padding: 0 10px; font-family: var(--font-jet); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+        .demo-badge { background: var(--warning-muted); border: 1px solid var(--warning); color: var(--warning); border-radius: 8px; padding: 5px 8px; font-family: var(--font-jet); font-size: 11px; }
 
-        .hero-wrap {
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 24px;
-          text-align: center;
+        .offline-banner {
+          position: fixed; top: 56px; left: 0; right: 0; height: 40px; z-index: 45;
+          background: var(--block-muted); border-bottom: 1px solid var(--block);
+          display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--block); font-size: 13px;
+          animation: slide-down 200ms ease;
         }
+        @keyframes slide-down { from { transform: translateY(-40px); } to { transform: translateY(0); } }
 
-        .hero-title {
-          margin: 0;
-          font-family: 'Syne', sans-serif;
-          font-weight: 800;
-          font-size: 80px;
-          letter-spacing: -0.03em;
-          line-height: 0.95;
+        .landing-main { position: relative; z-index: 10; min-height: 100vh; display: flex; align-items: center; }
+        .landing-text { width: min(520px, 100%); margin-left: clamp(24px, 7vw, 72px); }
+
+        .wordmark { font-family: var(--font-syne); font-weight: 800; font-size: clamp(48px, 7vw, 76px); letter-spacing: -0.025em; line-height: 1; margin: 0; position: relative; display: inline-block; }
+        .wordmark::after { content: ''; position: absolute; left: 0; bottom: -6px; height: 2px; width: 0%; background: var(--accent); transition: width 650ms ease; }
+        .wordmark-ready::after { width: 100%; }
+
+        .tagline { margin-top: 16px; font-family: var(--font-syne); font-size: clamp(28px, 4vw, 38px); font-weight: 700; letter-spacing: -0.01em; display: grid; gap: 4px; }
+        .split span { opacity: 0; transform: translateY(18px); animation: split-up 380ms ease forwards; }
+        .split span:nth-child(1) { animation-delay: 1200ms; }
+        .split span:nth-child(2) { animation-delay: 1260ms; }
+        @keyframes split-up { to { opacity: 1; transform: translateY(0); } }
+
+        .desc { margin-top: 20px; font-size: 17px; color: var(--text-muted); opacity: 0; animation: fade-in 300ms ease 1650ms forwards; }
+        @keyframes fade-in { to { opacity: 1; } }
+
+        .feature-pills { margin-top: 24px; display: grid; gap: 10px; }
+        .pill-row {
+          width: fit-content; display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 80%, transparent);
+          border-radius: 99px; padding: 8px 16px; font-size: 14px; color: var(--text-muted); backdrop-filter: blur(8px); opacity: 0; transform: translateY(12px); animation: pill-up 280ms ease forwards;
         }
+        .pill-row:nth-child(1) { animation-delay: 1800ms; color: var(--text-muted); }
+        .pill-row:nth-child(2) { animation-delay: 1890ms; }
+        .pill-row:nth-child(3) { animation-delay: 1980ms; }
+        .pill-row:nth-child(1) svg, .pill-row:nth-child(3) svg { color: var(--accent); }
+        .pill-row:nth-child(2) svg { color: var(--pass); }
+        @keyframes pill-up { to { opacity: 1; transform: translateY(0); } }
 
-        .hero-line {
-          width: 0;
-          height: 1px;
-          background: var(--accent);
-          margin: 10px auto 0;
-          animation: draw-line 600ms ease forwards;
-          animation-delay: 1000ms;
-        }
-
-        @keyframes draw-line { to { width: 180px; } }
-
-        .hero-sub {
-          margin-top: 18px;
-          font-family: 'Syne', sans-serif;
-          font-weight: 600;
-          font-size: 24px;
-          color: var(--text-muted);
-          opacity: 0;
-          animation: fade-up 400ms ease forwards;
-          animation-delay: 1100ms;
-        }
-
-        .feature-row {
-          margin-top: 28px;
-          display: flex;
-          justify-content: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .micro-badge {
-          border: 1px solid var(--border);
-          background: var(--surface);
-          border-radius: 99px;
-          padding: 6px 10px;
-          font-size: 12px;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          color: var(--text-muted);
-        }
-
-        .micro-dot { width: 6px; height: 6px; border-radius: 99px; animation: dot-pulse 1.8s ease-out infinite; }
-        .micro-dot.approval { background: var(--cluster-approval); }
-        .micro-dot.governance { background: var(--cluster-governance); }
-        .micro-dot.liquidation { background: var(--cluster-liquidation); }
-
-        @keyframes dot-pulse {
-          0%, 100% { opacity: 0.4; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.15); }
-        }
-
-        .btn-primary, .btn-ghost, .btn-danger, .icon-btn {
-          border-radius: 8px;
-          border: 1px solid transparent;
-          transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease;
-        }
-
-        .btn-primary {
-          height: 52px;
-          padding: 0 20px;
-          background: var(--accent);
-          color: var(--white);
-          font-size: 15px;
-          font-weight: 500;
+        .connect-wrap { margin-top: 32px; width: min(280px, 100%); }
+        .cta-btn {
           position: relative;
-          overflow: visible;
+          width: 100%; height: 52px; border-radius: 10px; background: var(--accent); color: #fff;
+          display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+          font-family: var(--font-syne); font-size: 15px; font-weight: 600;
+          transition: transform 120ms ease, background-color 250ms ease, box-shadow 250ms ease;
         }
+        .cta-btn:hover { background: var(--accent-dim); box-shadow: 0 0 0 8px var(--accent-glow); }
+        .cta-btn:active { transform: scale(0.96); }
+        .cta-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 
-        .btn-primary.cta::after {
-          content: '';
-          position: absolute;
-          inset: -8px;
-          border-radius: inherit;
-          border: 1px solid var(--accent-glow);
-          opacity: 0;
-          transform: scale(0.9);
-          transition: transform 300ms ease, opacity 300ms ease;
-          pointer-events: none;
+        .connector-list { margin-top: 8px; max-height: 0; opacity: 0; overflow: hidden; border: 1px solid transparent; border-radius: 10px; background: var(--surface); transition: max-height 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 280ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .connector-list-open { max-height: 260px; opacity: 1; border-color: var(--border); padding: 8px; }
+        .connector-item { width: 100%; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 12px; font-size: 14px; color: var(--text); }
+        .connector-item:hover { background: var(--surface-3); }
+        .connector-icon { width: 18px; text-align: center; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
+        .wallet-svg { display: block; }
+        .wallet-svg.coinbase, .wallet-svg.wc { color: var(--wallet-blue); }
+        .wallet-svg.metamask { color: var(--wallet-fox); }
+        .connector-error { margin-top: 8px; color: var(--block); font-size: 12px; animation: shake 300ms linear 1; }
+        @keyframes shake { 0%{transform:translateX(0)} 25%{transform:translateX(-4px)} 50%{transform:translateX(4px)} 75%{transform:translateX(-2px)} 100%{transform:translateX(0)} }
+
+        .demo-link { margin-top: 14px; color: var(--accent); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+        .demo-link:hover { text-decoration: underline; }
+
+        .landing-bottom {
+          position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; height: 48px; padding: 0 24px;
+          display: flex; align-items: center; justify-content: space-between;
         }
+        .subtle-line { font-size: 11px; color: var(--text-subtle); display: inline-flex; align-items: center; gap: 8px; }
+        .base-box { width: 16px; height: 16px; background: var(--base-blue); display: inline-block; }
 
-        .btn-primary.cta:hover::after { opacity: 1; transform: scale(1); }
+        .app-main { position: relative; z-index: 10; padding: 80px 16px 140px; }
+        .agent-col { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 16px; }
+        .stats-col { width: min(860px, 100%); margin: 0 auto; display: grid; gap: 16px; padding-bottom: 120px; }
+        .center-head { text-align: center; display: grid; gap: 8px; margin-bottom: 4px; }
+        .vision-title { font-family: var(--font-syne); font-size: clamp(26px, 4vw, 30px); margin: 0; transition: filter 280ms ease, opacity 280ms ease; }
+        .vision-title-blur { filter: blur(0.8px); opacity: 0.45; }
+        .center-head p { margin: 0; color: var(--text-muted); font-size: 16px; }
 
-        .btn-primary:hover { background: var(--accent-dim); }
-        .btn-primary:active { transform: scale(0.96); }
-        .btn-primary:disabled, .btn-ghost:disabled, .btn-danger:disabled { opacity: 0.35; cursor: not-allowed; }
-
-        .btn-ghost {
-          height: 36px;
-          padding: 0 14px;
-          background: transparent;
-          color: var(--text);
-          border-color: var(--border);
-          font-size: 13px;
-        }
-
-        .btn-ghost:hover { background: var(--surface-3); border-color: var(--text-muted); }
-
-        .btn-danger {
-          height: 36px;
-          padding: 0 14px;
-          background: var(--danger-muted);
-          color: var(--danger);
-          border-color: var(--danger);
-          font-size: 13px;
-        }
-
-        .icon-btn {
-          width: 36px;
-          height: 36px;
-          border-color: var(--border);
-          background: var(--surface);
-          color: var(--text);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .chip-wallet {
-          border: 1px solid var(--border);
-          background: var(--surface);
-          border-radius: 8px;
-          padding: 6px 10px;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 12px;
-          color: var(--text-muted);
-        }
-
-        .copy-icon { opacity: 0; transition: opacity 120ms ease; }
-        .chip-wallet:hover .copy-icon { opacity: 1; }
-
-        .main-wrap { max-width: 1320px; margin: 0 auto; padding: 72px 20px 120px; }
-
-        .lane-layout {
-          display: grid;
-          grid-template-columns: 30% 40% 30%;
-          gap: 20px;
-        }
-
-        .hud-card {
-          position: relative;
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          background: color-mix(in srgb, var(--surface) 70%, transparent);
-          backdrop-filter: blur(12px);
-          padding: 16px;
-          overflow: hidden;
-        }
-
-        .hud-card > * { position: relative; z-index: 2; }
-
-        .hud-card.interactive::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(280px circle at var(--card-x, 50%) var(--card-y, 50%), var(--accent-glow), transparent 70%);
-          opacity: 0;
-          transition: opacity 200ms ease;
-          z-index: 1;
-          pointer-events: none;
-        }
-
-        .hud-card.interactive:hover::before { opacity: 1; }
-
-        .hud-card.trace::after {
-          content: '';
-          position: absolute;
-          inset: -1px;
-          border-radius: inherit;
-          padding: 1px;
-          background: conic-gradient(from var(--trace-angle), var(--accent), transparent 60%, var(--accent));
-          opacity: 0;
-          transition: opacity 300ms ease;
-          z-index: 0;
-          -webkit-mask: linear-gradient(var(--white) 0 0) content-box, linear-gradient(var(--white) 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-        }
-
-        .hud-card.trace:hover::after {
-          opacity: 1;
-          animation: trace-spin 1000ms linear forwards;
-        }
-
-        @keyframes trace-spin {
-          from { --trace-angle: 0deg; }
-          to { --trace-angle: 360deg; }
-        }
-
-        .reveal { opacity: 0; transform: translateY(12px); animation: fade-up 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
-        @keyframes fade-up {
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .agent-card { transition: transform 120ms ease, border-color 120ms ease; }
-        .agent-card:hover { transform: scale(1.01); }
-
-        .pulse-ring {
-          width: 10px;
-          height: 10px;
-          border-radius: 99px;
-          position: relative;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .pulse-ring .dot { width: 10px; height: 10px; border-radius: 99px; background: var(--accent); z-index: 2; }
-        .pulse-ring .ring {
-          position: absolute;
-          inset: 0;
-          border: 1px solid var(--accent);
-          border-radius: 99px;
-          z-index: 1;
-          animation: ring 1.8s ease-out infinite;
-        }
-
-        .pulse-ring .ring.b { animation-delay: 0.6s; }
-
-        @keyframes ring {
-          from { transform: scale(1); opacity: 0.6; }
-          to { transform: scale(2.2); opacity: 0; }
-        }
-
-        .radar {
-          width: 200px;
-          height: 200px;
-          margin: 0 auto;
-          position: relative;
-        }
-
-        .radar circle.track { stroke: var(--accent); opacity: 0.3; }
-        .radar circle.sweep {
-          stroke: var(--accent);
-          stroke-dasharray: 130 260;
-          animation: radar-spin 3000ms linear infinite;
-          transform-origin: center;
-        }
-
-        .radar.fast circle.sweep { animation-duration: 1000ms; stroke: var(--accent-bright); }
-
-        @keyframes radar-spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        .ticker {
-          margin-top: 20px;
-          min-height: 244px;
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          overflow: hidden;
+        .panel {
           background: color-mix(in srgb, var(--surface) 72%, transparent);
-        }
-
-        .tick-row {
-          height: 40px;
-          display: grid;
-          grid-template-columns: 18px 1fr auto;
-          align-items: center;
-          gap: 8px;
-          padding: 0 12px;
-          border-bottom: 1px solid var(--border);
-          font-size: 13px;
-        }
-
-        .tick-row.new { animation: tick-in 240ms cubic-bezier(0.16,1,0.3,1), tick-flash 240ms ease; }
-
-        @keyframes tick-in {
-          from { transform: translateY(40px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-
-        @keyframes tick-flash {
-          from { background: var(--accent-glow-lg); }
-          to { background: transparent; }
-        }
-
-        .scan-text {
-          min-height: 200px;
-          display: grid;
-          place-items: center;
-          color: var(--text-subtle);
-          animation: scan-pulse 2000ms ease-in-out infinite;
-        }
-
-        @keyframes scan-pulse {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 1; }
-        }
-
-        .pill-row { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-
-        .stat-pill {
-          border: 1px solid var(--border);
-          border-radius: 99px;
-          background: var(--surface-2);
-          padding: 12px 20px;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          transition: transform 120ms ease, border-color 120ms ease;
-        }
-
-        .stat-pill:hover { transform: scale(1.03); border-color: var(--accent); }
-
-        .badge {
-          border: 1px solid var(--border);
-          border-radius: 6px;
-          padding: 3px 8px;
-          font-size: 10px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          font-weight: 500;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .badge.success { color: var(--success); background: var(--success-muted); border-color: var(--success); }
-        .badge.warning { color: var(--warning); background: var(--warning-muted); border-color: var(--warning); }
-        .badge.danger { color: var(--danger); background: var(--danger-muted); border-color: var(--danger); }
-        .badge.neutral { color: var(--text-muted); background: var(--surface-3); }
-
-        .queue-card {
-          transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease, max-height 280ms ease;
-          max-height: 200px;
-          opacity: 1;
-          transform: translateX(0);
-        }
-
-        .queue-card.flyout { transform: translateX(100px); opacity: 0; }
-        .queue-card.signed { max-height: 0; opacity: 0; transform: scaleY(0.8); padding-top: 0; padding-bottom: 0; margin: 0; border-width: 0; }
-
-        .risk-track { height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; margin-top: 8px; }
-        .risk-fill { height: 4px; width: 0; transition: width 500ms ease-out; }
-
-        .empty-queue {
-          min-height: 260px;
-          display: grid;
-          place-items: center;
-          text-align: center;
-          color: var(--text-muted);
-        }
-
-        .rot-slow { animation: rot 6000ms linear infinite; }
-        @keyframes rot { to { transform: rotate(360deg); } }
-
-        .analysis-shell {
-          max-width: 640px;
-          margin: 0 auto;
           border: 1px solid var(--border);
           border-radius: 16px;
-          background: color-mix(in srgb, var(--surface) 75%, transparent);
           backdrop-filter: blur(16px);
-          padding: 20px;
         }
 
-        .input, .textarea {
-          width: 100%;
-          border: 1px solid var(--border);
-          background: var(--surface-2);
-          color: var(--text);
-          border-radius: 8px;
-          padding: 10px 12px;
-          font-size: 15px;
+        .vision-panel {
+          padding: 24px;
+          border-top: 3px solid var(--accent);
+          border-color: color-mix(in srgb, var(--border) calc(100% - (var(--prox, 0) * 60%)), var(--accent));
+          box-shadow: 0 0 0 calc(var(--prox, 0) * 4px) rgba(255, 109, 0, calc(var(--prox, 0) * 0.08));
+          transition: box-shadow 180ms ease;
         }
 
-        .input:focus, .textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+        .vision-input {
+          width: 100%; min-height: 160px; resize: none; border: 0; outline: none; border-radius: 10px;
+          background: var(--surface-2); color: var(--text); padding: 16px; font-size: 16px; line-height: 1.7; font-family: var(--font-dm);
+        }
+        .vision-input::placeholder { color: var(--text-subtle); font-style: italic; font-size: 15px; }
 
-        .kind-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .quick-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .quick-row > span { color: var(--text-subtle); font-size: 11px; }
+        .category-pill {
+          border: 1px solid var(--border); border-radius: 99px; padding: 6px 12px; font-size: 12px; color: var(--text-muted); background: var(--surface-3);
+          transition: background-color 150ms ease, color 150ms ease;
+        }
+        .category-pill:hover { background: var(--accent); color: #fff; }
 
-        .kind-pill {
-          border: 1px solid var(--border);
-          border-radius: 99px;
-          padding: 8px 12px;
-          background: var(--surface-2);
-          color: var(--text-muted);
-          font-size: 12px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
+        .char-count { margin-top: 10px; text-align: right; font-family: var(--font-jet); font-size: 11px; color: var(--text-subtle); }
+        .char-warning { color: var(--warning); }
+        .char-danger { color: var(--block); }
+
+        .run-btn {
+          width: 100%; height: 56px; border-radius: 12px; background: var(--accent); color: #fff;
+          display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-family: var(--font-syne); font-size: 16px; font-weight: 600;
+          transition: transform 120ms ease, background-color 250ms ease, box-shadow 250ms ease;
+          position: relative; overflow: hidden;
+        }
+        .run-btn:hover:not(:disabled) { background: var(--accent-dim); box-shadow: 0 0 0 10px var(--accent-glow); }
+        .run-btn:active:not(:disabled) { transform: scale(0.96); }
+        .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .spark-burst { position: absolute; width: 0; height: 0; pointer-events: none; }
+        .spark {
+          position: absolute; width: 3px; height: 3px; border-radius: 99px; background: var(--accent);
+          animation: scatter 400ms ease-out forwards;
+          transform: rotate(calc(var(--i) * 45deg)) translateX(0px);
+        }
+        .spark-pass { background: var(--pass); }
+        @keyframes scatter {
+          from { opacity: 1; transform: rotate(calc(var(--i) * 45deg)) translateX(0px); }
+          to { opacity: 0; transform: rotate(calc(var(--i) * 45deg)) translateX(18px); }
         }
 
-        .kind-pill.active { background: var(--accent); color: var(--white); border-color: var(--accent); }
-        .kind-pill:active { transform: scale(0.96); }
+        .pipeline-panel, .output-panel { max-height: 0; opacity: 0; overflow: hidden; padding: 0 20px; transition: max-height 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease, padding 280ms ease; }
+        .panel-show { max-height: 2200px; opacity: 1; padding: 20px; }
 
-        .timeline { margin-top: 14px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 10px; }
-        .tl-node { text-align: center; }
-        .tl-circle {
-          width: 48px;
-          height: 48px;
-          border-radius: 99px;
-          border: 1px solid var(--border);
-          background: var(--surface-3);
-          margin: 0 auto;
-          display: grid;
-          place-items: center;
-          transition: border-color 120ms ease, background 120ms ease;
+        .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .panel-head span:first-child { font-size: 10px; letter-spacing: 0.1em; color: var(--text-subtle); font-weight: 500; }
+        .mono-accent { color: var(--accent); font-family: var(--font-jet); font-size: 11px; }
+
+        .stage-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+        .stage-item { text-align: center; position: relative; }
+        .stage-node { width: 44px; height: 44px; border-radius: 99px; margin: 0 auto; display: grid; place-items: center; border: 1px solid var(--border); background: var(--surface-3); color: var(--text-subtle); }
+        .stage-pending { background: var(--surface-3); color: var(--text-subtle); }
+        .stage-active { border: 1.5px solid var(--accent); color: var(--accent); }
+        .stage-complete { background: var(--pass-muted); color: var(--pass); border-color: color-mix(in srgb, var(--pass) 50%, var(--border)); }
+        .stage-failed { background: var(--block-muted); color: var(--block); border-color: color-mix(in srgb, var(--block) 50%, var(--border)); }
+        .electric { position: relative; background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box, conic-gradient(from var(--angle), var(--accent), transparent 40%, var(--accent)) border-box; border: 1.5px solid transparent; animation: spin-angle 1.4s linear infinite; }
+        @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+        @keyframes spin-angle { to { --angle: 360deg; } }
+
+        .stage-name { margin-top: 8px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-subtle); }
+        .stage-log { margin-top: 4px; font-size: 11px; font-family: var(--font-jet); color: var(--text-muted); min-height: 14px; }
+
+        .result-word { text-align: center; font-family: var(--font-syne); font-size: clamp(46px, 8vw, 60px); font-weight: 800; padding: 32px 0; position: relative; }
+        .result-word::after { content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 22px; height: 2px; width: 0%; transition: width 500ms ease; background: currentColor; }
+        .result-pass { color: var(--pass); }
+        .result-block { color: var(--block); }
+        .result-warning { color: var(--warning); }
+        .result-pass::after, .result-block::after, .result-warning::after { width: 60%; }
+
+        .output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .output-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; overflow: hidden; }
+        .output-card::before, .panel.glare::before {
+          content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 200ms ease;
+          background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255, 255, 255, 0.07) 0%, transparent 65%);
         }
-        .tl-circle.done { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 24%, var(--surface-2)); }
-        .tl-line { width: 100px; height: 2px; background: var(--border); overflow: hidden; border-radius: 99px; }
-        .tl-line > span { display: block; width: 100%; height: 2px; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform 400ms ease; }
-        .tl-line.done > span { transform: scaleX(1); }
+        .output-card:hover::before, .panel.glare:hover::before { opacity: 1; }
 
-        .consensus-word {
-          margin: 18px 0 6px;
-          text-align: center;
-          font-family: 'Syne', sans-serif;
-          font-weight: 800;
-          font-size: 64px;
-          line-height: 1;
-          letter-spacing: -0.03em;
+        .output-card header { font-size: 10px; letter-spacing: 0.1em; color: var(--text-subtle); display: inline-flex; align-items: center; gap: 6px; }
+        .output-card h4 { margin: 12px 0 6px; font-family: var(--font-syne); font-size: 18px; }
+        .output-card p { margin: 8px 0 0; font-size: 14px; color: var(--text-muted); }
+
+        .template-badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; background: var(--surface-3); font-size: 11px; font-family: var(--font-jet); color: var(--text-muted); }
+        .chip-wrap { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .cap-chip { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 11px; background: var(--surface-3); color: var(--text-muted); }
+
+        .safety-pass { margin-top: 8px; color: var(--pass); font-family: var(--font-syne); font-size: 20px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+        .safety-block { margin-top: 8px; color: var(--block); font-family: var(--font-syne); font-size: 20px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+        .mono-line { margin-top: 8px; font-family: var(--font-jet); font-size: 14px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; }
+        .check-lines { margin-top: 8px; display: grid; gap: 6px; }
+        .check-lines div { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+
+        .gauge-track { margin-top: 10px; height: 12px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+        .gauge-fill { height: 100%; background: var(--accent); transition: width 600ms ease-out; }
+        .gauge-labels { margin-top: 6px; display: flex; justify-content: space-between; font-family: var(--font-jet); color: var(--text-subtle); font-size: 11px; }
+        .runway-line { margin-top: 8px; display: flex; justify-content: space-between; color: var(--text-subtle); font-size: 11px; }
+        .runway { font-family: var(--font-syne); font-size: 20px; color: var(--text); }
+        .runway-pass { color: var(--pass); }
+        .runway-warning { color: var(--warning); }
+        .runway-block { color: var(--block); }
+
+        .code-wrap { margin-top: 16px; }
+        .code-head { width: 100%; display: flex; justify-content: space-between; align-items: center; color: var(--text-subtle); font-size: 10px; letter-spacing: 0.1em; }
+        .code-head span { display: inline-flex; align-items: center; gap: 6px; }
+        .head-right { gap: 10px; }
+        .rot { transform: rotate(180deg); transition: transform 240ms ease; }
+        .code-panel { border: 1px solid var(--border); border-radius: 12px; margin-top: 8px; max-height: 0; overflow: hidden; transition: max-height 240ms ease; background: var(--surface-2); }
+        .code-panel-open { max-height: 480px; }
+        .code-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 0; }
+        .code-scroll { max-height: 360px; overflow: auto; padding: 0 14px 10px; }
+        .code-scroll pre { margin: 0; font-family: var(--font-jet) !important; font-size: 12px; }
+        .sim-note { margin: 0; padding: 0 14px 12px; font-size: 11px; color: var(--text-subtle); font-style: italic; }
+        .code-empty { margin-top: 14px; color: var(--text-subtle); font-size: 12px; font-style: italic; }
+
+        .cycle-section h3 {
+          margin: 8px 0 10px;
+          font-family: var(--font-syne); font-size: 14px; font-weight: 600;
+          padding-left: 12px; border-left: 2px solid var(--accent);
         }
-
-        .proposal-grid { display: grid; grid-template-columns: 65% 35%; gap: 14px; }
-        .proposal-title { margin: 10px 0 0; font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 600; line-height: 1.2; }
-        .expand-wrap { overflow: hidden; transition: max-height 320ms cubic-bezier(0.16,1,0.3,1); }
-        .expand-inner { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; }
-        .type-summary { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); font-style: italic; min-height: 48px; }
-
-        .gauge-row { display: grid; grid-template-columns: 1fr 1px 1fr 1px 1fr; gap: 14px; align-items: center; }
-        .divider-v { width: 1px; height: 100%; background: var(--border); }
-
-        .alert-card.critical { animation: shake 400ms ease 1; }
-        @keyframes shake {
-          0% { transform: translateX(0); }
-          20% { transform: translateX(-3px); }
-          40% { transform: translateX(3px); }
-          60% { transform: translateX(-2px); }
-          80% { transform: translateX(2px); }
-          100% { transform: translateX(0); }
+        .cycle-list { max-height: 280px; overflow: auto; display: grid; gap: 8px; }
+        .empty-state { border: 1px dashed var(--border); border-radius: 8px; display: grid; place-items: center; gap: 12px; padding: 32px; color: var(--text-muted); }
+        .cycle-item {
+          border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 12px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px;
+          cursor: pointer; transition: background-color 150ms ease;
+          animation: list-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
         }
+        .cycle-item:hover { background: var(--surface-3); }
+        @keyframes list-in { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: translateY(0); } }
+
+        .status-dot { margin-top: 4px; width: 8px; height: 8px; border-radius: 99px; background: var(--text-subtle); }
+        .status-pass { background: var(--pass); }
+        .status-block { background: var(--block); }
+        .status-warning { background: var(--warning); }
+
+        .cycle-main { min-width: 0; }
+        .mono-time { font-family: var(--font-jet); font-size: 11px; color: var(--text-subtle); }
+        .cycle-text { font-size: 13px; color: var(--text-muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cycle-title { font-size: 13px; color: var(--text); margin-top: 2px; }
+        .cycle-right { text-align: right; display: grid; gap: 4px; }
+
+        .cycle-expand { grid-column: 1 / -1; max-height: 0; overflow: hidden; transition: max-height 240ms ease; }
+        .cycle-expand-open { max-height: 180px; }
+        .cycle-expand p { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); }
+
+        .apps-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 1fr); gap: 12px; overflow-x: auto; }
+        .apps-grid-list { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); overflow: visible; }
+        .app-card {
+          position: relative; min-width: 280px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(12px); padding: 20px; overflow: hidden;
+          transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .app-card:hover { transform: translateY(-2px); }
+        .top-strip { position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--border); }
+        .strip-pass { background: var(--pass); }
+        .strip-accent { background: var(--accent); }
+        .strip-block { background: var(--block); }
+        .app-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+        .app-head h4 { margin: 0; font-size: 16px; font-family: var(--font-syne); }
+        .metric-stack { margin-top: 12px; display: grid; gap: 10px; }
+        .metric-label { font-family: var(--font-jet); font-size: 11px; color: var(--text-subtle); margin-bottom: 4px; }
+        .metric-track { height: 4px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+        .metric-fill { height: 100%; background: var(--pass); transition: width 500ms ease-out; }
+        .metric-fill.warning { background: var(--warning); }
+        .metric-fill.block { background: var(--block); }
+        .handoff { margin-top: 12px; color: var(--pass); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+        .drop { margin-top: 12px; color: var(--block); font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+
+        .stats-hero { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+        .stats-hero > div { padding: 20px; border-right: 1px solid var(--border); }
+        .stats-hero > div:last-child { border-right: 0; }
+        .hero-label { display: block; color: var(--text-subtle); font-size: 12px; margin-bottom: 4px; }
+        .stats-hero strong { font-family: var(--font-syne); font-size: clamp(36px, 6vw, 52px); line-height: 1; }
+
+        .pass-block { width: 100%; height: 10px; border-radius: 6px; background: var(--block-muted); overflow: hidden; }
+        .pass-fill { height: 100%; background: var(--pass); transition: width 600ms ease-out; }
+        .pass-legend { display: flex; justify-content: space-between; font-family: var(--font-jet); font-size: 12px; color: var(--text-subtle); }
+
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .chart-wrap { height: 230px; }
+        .chart-empty { min-height: 230px; display: grid; place-items: center; color: var(--text-subtle); font-size: 13px; font-style: italic; }
+        .legend-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+        .legend-pill { border: 1px solid var(--border); border-radius: 99px; padding: 4px 8px; font-size: 11px; color: var(--text-muted); }
+
+        .budget-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 20px; }
+        .budget-row span { display: block; color: var(--text-subtle); font-size: 12px; }
+        .budget-row strong { font-family: var(--font-jet); font-size: 28px; }
+        .runway-track { grid-column: 1 / -1; height: 8px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+        .runway-fill { height: 100%; background: var(--accent); transition: width 500ms ease-out; }
+
+        .apps-table { margin-top: 8px; display: grid; gap: 2px; }
+        .table-head, .table-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; gap: 8px; padding: 10px 6px; font-size: 13px; }
+        .table-head { color: var(--text-subtle); font-family: var(--font-jet); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); }
+        .table-row { border-radius: 8px; }
+        .table-row:hover { background: var(--surface-3); }
+
+        .settings-panel { padding: 20px; display: grid; gap: 12px; }
+        .settings-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
         .bubble-nav {
-          position: fixed;
-          left: 50%;
-          bottom: 18px;
-          transform: translateX(-50%);
-          z-index: 100;
-          border: 1px solid var(--border);
+          position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 100;
+          padding: 10px; border-radius: 99px; border: 1px solid var(--border); backdrop-filter: blur(20px);
           background: color-mix(in srgb, var(--surface) 85%, transparent);
-          backdrop-filter: blur(20px);
-          border-radius: 99px;
-          padding: 8px;
-          display: flex;
-          gap: 6px;
-          width: auto;
+          display: inline-flex; gap: 6px;
         }
-
-        .bubble-btn {
-          width: 48px;
-          height: 48px;
-          border-radius: 99px;
-          border: 0;
-          background: transparent;
-          color: var(--text-subtle);
-          display: grid;
-          place-items: center;
-          position: relative;
-          transition: transform 120ms ease, background 120ms ease, color 120ms ease;
-        }
-
-        .bubble-btn:hover { transform: scale(1.1); background: var(--surface-3); color: var(--text); }
-        .bubble-btn.active { color: var(--accent); background: var(--accent-glow-lg); }
-
+        .bubble-tab { position: relative; width: 86px; height: 44px; border-radius: 99px; display: grid; place-items: center; color: var(--text-muted); transition: transform 150ms ease, background-color 150ms ease; }
+        .bubble-tab:hover { transform: scale(1.1); background: var(--surface-3); }
+        .bubble-tab-active { color: var(--accent); background: var(--accent-glow-xs); }
         .bubble-label {
-          position: absolute;
-          bottom: 54px;
-          left: 50%;
-          transform: translate(-50%, 8px);
-          opacity: 0;
-          pointer-events: none;
-          font-size: 11px;
-          color: var(--text-subtle);
-          white-space: nowrap;
-          transition: transform 200ms ease, opacity 200ms ease;
+          position: absolute; top: -18px; font-size: 11px; color: var(--text-subtle); opacity: 0;
+          animation: bubble-label 200ms ease forwards;
         }
+        @keyframes bubble-label { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .bubble-dot { position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 99px; background: var(--accent); }
 
-        .bubble-btn:hover .bubble-label,
-        .bubble-btn.active .bubble-label { transform: translate(-50%, 0); opacity: 1; }
+        .agent-bubble { position: fixed; right: 24px; bottom: 96px; z-index: 200; }
+        .agent-fab { width: 56px; height: 56px; border-radius: 99px; background: var(--accent); color: #fff; position: relative; display: grid; place-items: center; }
+        .ring { position: absolute; inset: 0; border-radius: 99px; border: 1.5px solid var(--accent); animation: pulse-ring 1.8s ease-out infinite; }
+        .ring-delay { animation-delay: 0.6s; }
+        @keyframes pulse-ring { from { transform: scale(1); opacity: 0.5; } to { transform: scale(2.2); opacity: 0; } }
 
-        .nav-indicator {
-          position: absolute;
-          width: 4px;
-          height: 4px;
-          border-radius: 99px;
-          background: var(--accent);
-          bottom: 4px;
-          transform: translateX(-50%);
-          transition: left 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .swarm-bubble {
-          position: fixed;
-          right: 24px;
-          bottom: 24px;
-          z-index: 200;
-        }
-
-        .swarm-btn {
-          width: 56px;
-          max-width: 56px;
-          height: 56px;
-          border-radius: 99px;
-          border: 0;
-          background: var(--accent);
-          color: var(--white);
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          overflow: hidden;
-          padding: 0 18px;
+        .agent-info-pill {
+          position: absolute; right: 64px; top: 8px; white-space: nowrap; max-width: 0; overflow: hidden;
           transition: max-width 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+          border-radius: 999px; background: var(--surface); border: 1px solid var(--border); padding: 8px 12px; font-size: 12px; color: var(--text-muted);
         }
+        .agent-bubble:hover .agent-info-pill { max-width: 200px; }
 
-        .swarm-btn:hover { max-width: 220px; }
-        .swarm-btn-label { opacity: 0; transition: opacity 120ms ease; white-space: nowrap; font-size: 13px; }
-        .swarm-btn:hover .swarm-btn-label { opacity: 1; }
-
-        .swarm-panel {
-          margin-top: 10px;
-          width: 280px;
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          background: color-mix(in srgb, var(--surface) 82%, transparent);
-          backdrop-filter: blur(20px);
-          padding: 12px;
-          animation: fade-up 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        .agent-panel {
+          position: absolute; right: 0; bottom: 66px; width: 300px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--border); border-radius: 14px; backdrop-filter: blur(20px);
+          padding: 16px; display: grid; gap: 10px; opacity: 0; transform: scale(0.9); pointer-events: none;
+          transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease;
         }
+        .agent-bubble-open .agent-panel { opacity: 1; transform: scale(1); pointer-events: auto; }
+        .agent-last { display: grid; gap: 6px; }
+        .agent-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); }
 
-        .mono { font-family: 'JetBrains Mono', monospace; }
-        .label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-subtle); }
-
-        .table-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
-        .table-main { display: grid; grid-template-columns: 90px 1fr 110px 90px 90px; gap: 8px; align-items: center; font-size: 13px; }
-        .table-expand { overflow: hidden; transition: max-height 240ms ease; color: var(--text-muted); font-size: 13px; }
+        .toast-stack { position: fixed; top: 20px; right: 20px; z-index: 300; display: grid; gap: 10px; width: min(360px, calc(100vw - 40px)); }
+        .toast {
+          border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; background: var(--surface-2);
+          padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px;
+          animation: toast-in 220ms ease;
+        }
+        .toast-accent { border-left-color: var(--accent); }
+        .toast-pass { border-left-color: var(--pass); }
+        .toast-block { border-left-color: var(--block); }
+        .toast-warning { border-left-color: var(--warning); }
+        @keyframes toast-in { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: translateX(0); } }
 
         @media (max-width: 1023px) {
-          .lane-layout { grid-template-columns: 1fr; }
-          .proposal-grid { grid-template-columns: 1fr; }
-          .gauge-row { grid-template-columns: 1fr; }
-          .divider-v { display: none; }
+          .landing-text { margin-inline: 32px; }
+          .charts-grid { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 767px) {
-          .topbar-inner .center-network { display: none; }
-          .hero-title { font-size: 56px; }
-          .bubble-nav { width: 90vw; justify-content: space-between; }
-          .main-wrap { padding: 64px 12px 116px; }
-          .swarm-bubble { right: 16px; bottom: 86px; }
-          .table-main { grid-template-columns: 1fr; }
+          .bars-canvas, .flow-canvas { display: none; }
+          .top-bar { grid-template-columns: 1fr auto; padding: 0 14px; }
+          .net-pill { display: none; }
+          .landing-text { margin-inline: 24px; width: calc(100% - 48px); }
+          .landing-bottom { padding: 0 14px; }
+          .landing-bottom .subtle-line:last-child { display: none; }
+          .output-grid { grid-template-columns: 1fr; }
+          .stage-row { grid-template-columns: repeat(5, minmax(52px, 1fr)); overflow-x: auto; }
+          .bubble-nav { width: 88vw; justify-content: space-between; }
+          .bubble-tab { width: 30%; }
+          .agent-bubble { right: 16px; bottom: 102px; }
+          .stats-hero { grid-template-columns: 1fr; }
+          .stats-hero > div { border-right: 0; border-bottom: 1px solid var(--border); }
+          .stats-hero > div:last-child { border-bottom: 0; }
+          .budget-row { grid-template-columns: 1fr; }
+          .table-head, .table-row { grid-template-columns: 2fr 1fr 1fr; }
+          .table-head span:nth-child(n+4), .table-row span:nth-child(n+4) { display: none; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .reveal,
-          .btn-primary,
-          .hud-card,
-          .swarm-btn,
-          .bubble-btn,
-          .tick-row,
-          .hero-line,
-          .hero-sub,
-          .radar circle.sweep,
-          .alert-card.critical,
-          .pulse-ring .ring { animation: none !important; transition: none !important; }
+          .bars-canvas, .flow-canvas, .ring, .ring-delay, .magnet, .magnet-small, .tilt, .spark-burst { display: none !important; }
+          * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
         }
       `}</style>
 
@@ -2367,23 +2924,16 @@ function StatsRow({
   onCopy: (v: string, k: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  return (
-    <div className="table-row">
-      <button style={{ width: '100%', border: 0, background: 'transparent', color: 'inherit', padding: 0 }} onClick={() => setOpen((v) => !v)}>
-        <div className="table-main">
-          <span className="mono">{row.block}</span>
-          <span className="chip-wallet" style={{ width: '100%', justifyContent: 'space-between' }} onClick={(e) => { e.stopPropagation(); onCopy(row.hash, row.id); }}>
-            <span>{`${row.hash.slice(0, 12)}...${row.hash.slice(-6)}`}</span>
-            {copied ? <CheckCircle2 size={14} strokeWidth={1.5} color="var(--success)" /> : <Copy size={14} strokeWidth={1.5} />}
-          </span>
-          <span className="mono">{row.kind}</span>
-          <span className={`badge ${row.outcome === 'BLOCK' ? 'danger' : row.outcome === 'VETO' ? 'warning' : 'success'}`}>{row.outcome}</span>
-          <span style={{ color: 'var(--text-subtle)', fontSize: 11 }}>{row.time}</span>
-        </div>
-      </button>
-      <div className="table-expand" style={{ maxHeight: open ? 72 : 0 }}>
-        <div style={{ paddingTop: 8 }}>{row.details}</div>
-      </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <AppShellInternal />
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

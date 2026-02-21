@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { zAddress } from './validators.js';
+import { zAddress } from './validators';
 
 // ─── Rules Engine: Allowed Action Types (strict) ──────────
 // The deterministic rules engine may only emit these.

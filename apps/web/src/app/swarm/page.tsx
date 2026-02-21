@@ -31,7 +31,7 @@ export default function SwarmPage() {
     {
       time: '14:23:02',
       agent: 'MEV Watcher',
-      message: 'No sandwich risk detected – this is an approval, not a swap.',
+      message: 'No sandwich risk detected - this is an approval, not a swap.',
       type: 'ok' as const,
     },
     {
@@ -67,7 +67,7 @@ export default function SwarmPage() {
       <div className="glass-panel rounded-xl p-6">
         <div className="mb-4 flex items-center gap-3">
           <span className="h-2 w-2 rounded-full bg-safe-green animate-pulse" />
-          <span className="text-sm text-gray-400">SwarmGuard — 6 agents online</span>
+          <span className="text-sm text-gray-400">SwarmGuard - 6 agents online</span>
         </div>
 
         <div className="space-y-1 mono-tech text-sm">

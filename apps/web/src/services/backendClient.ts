@@ -85,7 +85,7 @@ export interface StatusResponse {
   logsCount: number;
   runsCount: number;
   /** @deprecated SwarmGuard removed; kept for backward compat */
-  agents?: number;
+  agents?: number | string[];
   [key: string]: unknown;
 }
 
@@ -99,6 +99,7 @@ export function getStatus() {
 
 // ─── Analytics ───────────────────────────────────────────
 
+// ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
 export interface AnalyticsSummaryResponse {
   gasSpentWei: string;
   x402SpendWei: string;
@@ -132,6 +133,7 @@ export function getPayments(limit = 100) {
 }
 
 // ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
+// ─── SwarmGuard ──────────────────────────────────────────
 
 /** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
 export interface EvaluateTxResponse {

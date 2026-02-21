@@ -14,7 +14,7 @@ export interface TransactionEvaluation {
   data: string;
   chainId: SupportedChainId;
   simulation: SimulationResult;
-  swarmDecision: import('./agent.js').SwarmConsensusDecision;
+  swarmDecision: import('./agent').SwarmConsensusDecision;
   policyCheck: PolicyCheckResult;
   timestamp: string;
 }
@@ -58,7 +58,7 @@ export interface AuditLogEntry {
   id: string;
   type: 'TX' | 'GOVERNANCE';
   timestamp: string;
-  agentOutputs: import('./agent.js').AgentRiskReport[];
+  agentOutputs: import('./agent').AgentRiskReport[];
   consensusScore: number;
   finalDecision: string;
   txHash?: string;
