@@ -21,7 +21,9 @@ import type { Hex } from 'viem';
 // ─── Types ───────────────────────────────────────────────
 
 export interface SessionLimits {
-  maxAmountIn: bigint;       // USDC in base units (6 decimals) — per-trade cap
+  seedAmountInBaseUnits: bigint; // Explicit seed amount (base units)
+  maxAmountIn: bigint;       // Backward-compatible alias for per-cycle cap
+  maxTradeCapPerCycleBaseUnits: bigint; // Derived cap = 20% of seed per cycle
   maxSlippageBps: number;    // e.g. 50 = 0.5%
   maxPriceImpactBps: number; // e.g. 500 = 5%
 }
@@ -61,6 +63,7 @@ export function createSession(params: {
   swapper: string;
   smartAccount: string;
   validForSeconds: number;
+  seedAmountInBaseUnits: bigint;
   maxAmountIn: bigint;
   maxSlippageBps: number;
   maxPriceImpactBps: number;
@@ -77,7 +80,9 @@ export function createSession(params: {
     sessionKeyPrivateKey: pk,
     validUntil,
     limits: {
+      seedAmountInBaseUnits: params.seedAmountInBaseUnits,
       maxAmountIn: params.maxAmountIn,
+      maxTradeCapPerCycleBaseUnits: params.maxAmountIn,
       maxSlippageBps: params.maxSlippageBps,
       maxPriceImpactBps: params.maxPriceImpactBps,
     },
@@ -120,7 +125,9 @@ export function sessionSummary(s: Session) {
     expiresIn: Math.max(0, s.validUntil - Math.floor(Date.now() / 1000)),
     active: Math.floor(Date.now() / 1000) <= s.validUntil,
     limits: {
+      seedAmountInBaseUnits: s.limits.seedAmountInBaseUnits.toString(),
       maxAmountIn: s.limits.maxAmountIn.toString(),
+      maxTradeCapPerCycleBaseUnits: s.limits.maxTradeCapPerCycleBaseUnits.toString(),
       maxSlippageBps: s.limits.maxSlippageBps,
       maxPriceImpactBps: s.limits.maxPriceImpactBps,
     },
