@@ -15,7 +15,7 @@ export type {
   ConsensusDecision,
   AgentRiskReportV2,
   SwarmConsensusDecisionV2,
-} from './types/agent.js';
+} from './types/agent';
 
 export type {
   VoteDirection,
@@ -26,17 +26,17 @@ export type {
   ProposalSummary,
   VoteRecommendation,
   VoteIntent,
-} from './types/governance.js';
+} from './types/governance';
 
-export type { PolicyConfig } from './types/policy.js';
-export { DEFAULT_POLICY } from './types/policy.js';
+export type { PolicyConfig } from './types/policy';
+export { DEFAULT_POLICY } from './types/policy';
 
 export type {
   AgentMarker,
   DetectedZone,
   SpatialMemory,
   SpatialAtlasResponse,
-} from './types/spatial.js';
+} from './types/spatial';
 
 export type {
   InputTx,
@@ -45,7 +45,7 @@ export type {
   LogEventType,
   LogLevel,
   LogEvent,
-} from './types/intents.js';
+} from './types/intents';
 
 export type {
   SupportedChainId,
@@ -55,7 +55,7 @@ export type {
   ApprovalChange,
   PolicyCheckResult,
   AuditLogEntry,
-} from './types/wallet.js';
+} from './types/wallet';
 
 // Schemas
 export {
@@ -65,15 +65,15 @@ export {
   RecommendedActionSchema,
   AgentRiskReportSchema,
   SwarmConsensusDecisionSchema,
-} from './schemas/agent.js';
+} from './schemas/agent';
 
 export {
   VoteDirectionSchema,
   GovernanceProposalSchema,
   ProposalAnalysisSchema,
-} from './schemas/governance.js';
+} from './schemas/governance';
 
-export { PolicyConfigSchema } from './schemas/policy.js';
+export { PolicyConfigSchema } from './schemas/policy';
 
 // ─── Schemas (V2 — used by orchestrator) ─────────────────
 export {
@@ -83,13 +83,13 @@ export {
   ConsensusDecisionSchema as ConsensusDecisionEnumSchema,
   AgentRiskReportV2Schema,
   SwarmConsensusDecisionV2Schema,
-} from './schemas/agentV2.js';
+} from './schemas/agentV2';
 
 export {
   VoteRecommendationSchema,
   ProposalSummarySchema,
   VoteIntentSchema,
-} from './schemas/governanceV2.js';
+} from './schemas/governanceV2';
 
 export {
   ActionTypeSchema,
@@ -98,7 +98,7 @@ export {
   LogEventTypeSchema,
   LogLevelSchema,
   LogEventSchema,
-} from './schemas/intents.js';
+} from './schemas/intents';
 
 // ─── Rules engine: evaluation inputs & log payload ───────
 export {
@@ -108,7 +108,7 @@ export {
   LiquidationEvaluationSchema,
   EvaluationInputSchema,
   RulesEngineLogPayloadSchema,
-} from './schemas/evaluation.js';
+} from './schemas/evaluation';
 export type {
   RulesEngineActionType,
   ApprovalEvaluation,
@@ -116,7 +116,7 @@ export type {
   LiquidationEvaluation,
   EvaluationInput,
   RulesEngineLogPayload,
-} from './schemas/evaluation.js';
+} from './schemas/evaluation';
 
 // ─── Validators ──────────────────────────────────────────
 export {
@@ -124,9 +124,9 @@ export {
   zBytes32,
   zHexData,
   zISOTimestamp,
-} from './schemas/validators.js';
+} from './schemas/validators';
 
 // Constants
-export * from './constants/index.js';
-export type { ChainConfig } from './constants/chains.js';
-export type { SponsorEntry } from './constants/sponsors.js';
+export * from './constants/index';
+export type { ChainConfig } from './constants/chains';
+export type { SponsorEntry } from './constants/sponsors';

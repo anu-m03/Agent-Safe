@@ -1,12 +1,7 @@
 'use client';
 
-<<<<<<< HEAD
-import { useAccount } from 'wagmi'
-import { useConnect, useDisconnect } from 'wagmi'
-=======
 import { Wallet } from 'lucide-react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
->>>>>>> 2876e3ac (frontend v5)
 
 const BASE_CHAIN_ID = 8453;
 

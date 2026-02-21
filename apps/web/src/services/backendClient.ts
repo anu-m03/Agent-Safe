@@ -79,17 +79,13 @@ export interface HealthResponse {
 }
 
 export interface StatusResponse {
-<<<<<<< HEAD
   alive?: boolean;
   uptime: number;
   systemPlanes?: string[];
-=======
-  agents: number | string[];
->>>>>>> 2876e3ac (frontend v5)
   logsCount: number;
   runsCount: number;
   /** @deprecated SwarmGuard removed; kept for backward compat */
-  agents?: number;
+  agents?: number | string[];
   [key: string]: unknown;
 }
 
@@ -101,9 +97,7 @@ export function getStatus() {
   return request<StatusResponse>('/status');
 }
 
-<<<<<<< HEAD
 // ─── SwarmGuard (deprecated — routes removed; use marketplace/request-protection or execution) ─
-=======
 export interface AnalyticsSummaryResponse {
   gasSpentWei: string;
   x402SpendWei: string;
@@ -137,7 +131,6 @@ export function getPayments(limit = 100) {
 }
 
 // ─── SwarmGuard ──────────────────────────────────────────
->>>>>>> 2876e3ac (frontend v5)
 
 /** @deprecated POST /api/swarm/evaluate-tx removed. Use marketplace request-protection or execution flow. */
 export interface EvaluateTxResponse {
@@ -295,10 +288,7 @@ export function executeVote(voteId: string) {
     body: JSON.stringify({ voteId }),
   });
 }
-<<<<<<< HEAD
-=======
 
->>>>>>> 2876e3ac (frontend v5)
 // ─── Spatial (Blockade Labs) ─────────────────────────────
 
 export function generateProposalSpace(proposalId: string) {
@@ -504,7 +494,8 @@ export function triggerAppSpace(appId: string, regenerate = false) {
     `/api/app-agent/${encodeURIComponent(appId)}/space`,
     { method: 'POST', body: JSON.stringify({ regenerate }) },
   );
-=======
+}
+
 // ─── Streams (Liquidation signals) ───────────────────────
 
 export interface StreamEvent {
@@ -536,5 +527,4 @@ export function getStreamEvents(limit = 20) {
 
 export function getStreamAlerts(limit = 20) {
   return request<{ alerts: LiquidationAlert[] }>(`/api/streams/alerts?limit=${limit}`);
->>>>>>> 2876e3ac (frontend v5)
 }
