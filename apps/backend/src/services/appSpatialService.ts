@@ -162,7 +162,7 @@ async function runAppSpatialReasoning(
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: `${APP_SPATIAL_SYSTEM_PROMPT}\n\n${userPrompt}` }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 900 },
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 2048 },
     });
 
     const text = result.response.text();

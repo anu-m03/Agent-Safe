@@ -1,0 +1,29 @@
+{
+  "appId": "meme-c7cf2939-ad09-45ce-a35e-1c6fa3e5c60c",
+  "ideaId": "idea-meme-c7cf2939-ad09-45ce-a35e-1c6fa3e5c60c",
+  "sceneId": 0,
+  "sceneHash": "",
+  "prompt": "",
+  "fileUrl": "",
+  "thumbUrl": "",
+  "createdAt": "2026-02-21T14:06:16.196Z",
+  "trendTags": [
+    "base",
+    "meme",
+    "demo"
+  ],
+  "title": "Based Agent Coin",
+  "status": "INCUBATING",
+  "metrics": {
+    "users": 12,
+    "revenueUsd": 2.5,
+    "impressions": 180,
+    "updatedAt": 1771682776191
+  },
+  "detectedZones": [],
+  "agentMarkers": [],
+  "spatialSummary": "",
+  "evolutionNote": "",
+  "status_spatial": "error",
+  "errorMessage": "Skybox generation timed out after 90s"
+}

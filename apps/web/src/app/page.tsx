@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getAppEvolutionAtlas, seedTestApp } from '@/services/backendClient';
+import { getAppEvolutionAtlas, seedTestApp, triggerAppSpace } from '@/services/backendClient';
 import type { AppSpatialMemory, AppSpatialMarker, AppSpatialZone } from '@/services/backendClient';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -544,7 +544,41 @@ function AppShellInternal() {
   const [outcomeFlash, setOutcomeFlash] = useState<'pass' | 'block' | null>(null);
 
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
-  const [memeDeployResult, setMemeDeployResult] = useState<{ txHash: string; tokenAddress: string | null; blockNumber: number } | null>(null);
+  const [memeDeployResult, setMemeDeployResult] = useState<{ txHash: string; tokenAddress: string | null; blockNumber: number; appId?: string } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const s = window.localStorage.getItem('agentsafe-meme-deploy');
+      if (s) return JSON.parse(s);
+    } catch {}
+    return null;
+  });
+  const [memeInteractResult, setMemeInteractResult] = useState<{
+    txHash: string;
+    blockNumber: number;
+    transferAmount: string;
+    feePercent: string;
+    feeAmount: string;
+    netAmount: string;
+    recipient: string;
+    feeRecipient: string;
+    simulated?: boolean;
+    tokenName?: string;
+    tokenSymbol?: string;
+    totalSupply?: string;
+    balances: {
+      signer: { address: string; balance: string };
+      recipient: { address: string; balance: string };
+      agentTreasury: { address: string; balance: string };
+    };
+    message: string;
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const s = window.localStorage.getItem('agentsafe-meme-interact');
+      if (s) return JSON.parse(s);
+    } catch {}
+    return null;
+  });
 
   const INDUSTRY_OPTIONS = ['DeFi', 'NFT', 'Gaming', 'Social', 'DAO / Governance', 'Infrastructure', 'RWA', 'Payments', 'Identity', 'Analytics'];
   const [interestedIndustries, setInterestedIndustries] = useState<string[]>(() => {
@@ -612,7 +646,11 @@ function AppShellInternal() {
 
   const appEvolutionQuery = useQuery({
     queryKey: ['appEvolutionAtlas'],
-    queryFn: getAppEvolutionAtlas,
+    queryFn: async () => {
+      const result = await getAppEvolutionAtlas();
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    },
     enabled: onApp,
     refetchInterval: 60_000,
   });
@@ -647,6 +685,20 @@ function AppShellInternal() {
       window.localStorage.setItem('agentsafe-interested-industries', JSON.stringify(interestedIndustries));
     } catch {}
   }, [interestedIndustries]);
+
+  useEffect(() => {
+    try {
+      if (memeDeployResult) window.localStorage.setItem('agentsafe-meme-deploy', JSON.stringify(memeDeployResult));
+      else window.localStorage.removeItem('agentsafe-meme-deploy');
+    } catch {}
+  }, [memeDeployResult]);
+
+  useEffect(() => {
+    try {
+      if (memeInteractResult) window.localStorage.setItem('agentsafe-meme-interact', JSON.stringify(memeInteractResult));
+      else window.localStorage.removeItem('agentsafe-meme-interact');
+    } catch {}
+  }, [memeInteractResult]);
 
   const toggleIndustry = (industry: string) => {
     setInterestedIndustries((prev) =>
@@ -808,7 +860,7 @@ function AppShellInternal() {
 
   const memeDemoMutation = useMutation({
     mutationFn: async () =>
-      api<{ ok: boolean; message?: string; app?: AppRow; txHash?: string; tokenAddress?: string | null; blockNumber?: number }>('/api/app-agent/demo-meme-deploy', {
+      api<{ ok: boolean; message?: string; app?: AppRow; appId?: string; txHash?: string; tokenAddress?: string | null; blockNumber?: number }>('/api/app-agent/demo-meme-deploy', {
         method: 'POST',
         body: JSON.stringify({ walletAddress }),
       }),
@@ -819,13 +871,65 @@ function AppShellInternal() {
           txHash: payload.txHash,
           tokenAddress: payload.tokenAddress ?? null,
           blockNumber: payload.blockNumber ?? 0,
+          appId: payload.appId ?? undefined,
         });
       }
+      setMemeInteractResult(null);
       qc.invalidateQueries({ queryKey: ['apps', walletAddress] });
+      // Trigger spatial generation explicitly + refetch atlas after generation completes
+      if (payload.appId) {
+        triggerAppSpace(payload.appId).catch(() => {});
+        // Blockade Labs takes ~15-30s; poll atlas a few times
+        const delays = [5_000, 15_000, 30_000, 60_000];
+        delays.forEach((ms) => {
+          window.setTimeout(() => qc.invalidateQueries({ queryKey: ['appEvolutionAtlas'] }), ms);
+        });
+      }
       qc.invalidateQueries({ queryKey: ['appEvolutionAtlas'] });
     },
     onError: (err: Error) => {
       addToast(`Demo deploy failed: ${err.message}`, 'block', 4500);
+    },
+  });
+
+  const memeInteractMutation = useMutation({
+    mutationFn: async () => {
+      if (!memeDeployResult?.tokenAddress) throw new Error('No deployed token to interact with');
+      return api<{
+        ok: boolean;
+        simulated?: boolean;
+        txHash: string;
+        blockNumber: number;
+        transferAmount: string;
+        feePercent: string;
+        feeAmount: string;
+        netAmount: string;
+        recipient: string;
+        feeRecipient: string;
+        tokenName?: string;
+        tokenSymbol?: string;
+        totalSupply?: string;
+        balances: {
+          signer: { address: string; balance: string };
+          recipient: { address: string; balance: string };
+          agentTreasury: { address: string; balance: string };
+        };
+        message: string;
+      }>('/api/app-agent/demo-meme-interact', {
+        method: 'POST',
+        body: JSON.stringify({
+          tokenAddress: memeDeployResult.tokenAddress,
+          recipientAddress: walletAddress || undefined,
+        }),
+      });
+    },
+    onSuccess: (payload) => {
+      addToast(payload.message || 'Transfer complete!', 'pass', 5000);
+      setMemeInteractResult(payload);
+      qc.invalidateQueries({ queryKey: ['apps', walletAddress] });
+    },
+    onError: (err: Error) => {
+      addToast(`Interact failed: ${err.message}`, 'block', 4500);
     },
   });
 
@@ -1376,15 +1480,193 @@ function AppShellInternal() {
                     </div>
                   </div>
 
-                  <a
-                    href={`https://sepolia.basescan.org/tx/${memeDeployResult.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ghost-btn"
-                    style={{ fontSize: 11, padding: '5px 14px', textDecoration: 'none', alignSelf: 'flex-start', marginTop: 2 }}
-                  >
-                    View on BaseScan
-                  </a>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2, flexWrap: 'wrap' }}>
+                    <a
+                      href={`https://sepolia.basescan.org/tx/${memeDeployResult.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ghost-btn"
+                      style={{ fontSize: 11, padding: '5px 14px', textDecoration: 'none' }}
+                    >
+                      View on BaseScan
+                    </a>
+                    {memeDeployResult.tokenAddress ? (
+                      <button
+                        className="ghost-btn"
+                        disabled={memeInteractMutation.isPending}
+                        onClick={() => memeInteractMutation.mutate()}
+                        style={{ fontSize: 11, padding: '5px 14px', background: 'color-mix(in srgb, var(--accent) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)', cursor: 'pointer' }}
+                      >
+                        {memeInteractMutation.isPending ? (
+                          <><Loader2 className="spin" size={12} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Loading...</>
+                        ) : (
+                          <><HandCoins size={12} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Fee Demo</>
+                        )}
+                      </button>
+                    ) : null}
+                    {memeDeployResult.appId ? (
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          triggerAppSpace(memeDeployResult.appId!).then(() => {
+                            addToast('Spatial scene generation started — check the Atlas tab in ~30s', 'pass', 5000);
+                            [5_000, 15_000, 30_000, 60_000].forEach((ms) => {
+                              window.setTimeout(() => qc.invalidateQueries({ queryKey: ['appEvolutionAtlas'] }), ms);
+                            });
+                          }).catch(() => {
+                            addToast('Spatial generation failed', 'block', 3000);
+                          });
+                        }}
+                        style={{ fontSize: 11, padding: '5px 14px', background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)', cursor: 'pointer' }}
+                      >
+                        <Globe size={12} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Generate Scene
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {/* Skybox preview from Blockade Labs */}
+                  {(() => {
+                    const atlas: AppSpatialMemory[] = appEvolutionQuery.data?.atlas ?? [];
+                    const scene = memeDeployResult.appId ? atlas.find((m) => m.appId === memeDeployResult.appId) : undefined;
+                    if (!scene) return null;
+                    if (scene.status_spatial === 'pending' || scene.status_spatial === 'processing') {
+                      return (
+                        <div style={{ borderRadius: 10, overflow: 'hidden', background: 'color-mix(in srgb, var(--accent) 8%, var(--surface))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
+                          <Loader2 size={14} strokeWidth={1.5} className="spin" style={{ color: 'var(--accent)' }} />
+                          <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>Generating 360° spatial scene…</span>
+                        </div>
+                      );
+                    }
+                    if (scene.thumbUrl || scene.fileUrl) {
+                      return (
+                        <div style={{ borderRadius: 10, overflow: 'hidden', position: 'relative', marginTop: 2 }}>
+                          <img
+                            src={scene.thumbUrl || scene.fileUrl}
+                            alt={scene.title || 'Spatial scene'}
+                            style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 10, display: 'block' }}
+                          />
+                          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,.65) 0%, transparent 50%)', borderRadius: 10 }} />
+                          <div style={{ position: 'absolute', bottom: 8, left: 10, right: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,.6)' }}>
+                              <Globe size={11} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                              {scene.title || 'Spatial Memory'}
+                            </span>
+                            {scene.fileUrl && (
+                              <a href={scene.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: '#fff', textDecoration: 'underline', textShadow: '0 1px 4px rgba(0,0,0,.6)' }}>
+                                Open 360° ↗
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              ) : null}
+
+              {/* Fee split result card */}
+              {memeInteractResult ? (
+                <div
+                  className="panel panel-show"
+                  style={{
+                    padding: '18px 20px',
+                    marginBottom: 16,
+                    background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))',
+                    border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+                    borderRadius: 14,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <HandCoins size={16} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
+                    <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
+                      {memeInteractResult.simulated ? 'Fee Mechanism Demo' : 'Fee Split Transfer'}
+                    </span>
+                    <span style={{ fontSize: 10, background: 'color-mix(in srgb, var(--accent) 20%, transparent)', padding: '2px 8px', borderRadius: 6, fontWeight: 500 }}>
+                      {memeInteractResult.feePercent} fee
+                    </span>
+                    {memeInteractResult.simulated ? (
+                      <span style={{ fontSize: 9, background: 'color-mix(in srgb, var(--warning, #f59e0b) 20%, transparent)', color: 'var(--warning, #f59e0b)', padding: '2px 8px', borderRadius: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                        Simulated
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Amount breakdown */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <div style={{ background: 'color-mix(in srgb, var(--surface-2) 60%, transparent)', padding: '10px 12px', borderRadius: 10, textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-subtle)', marginBottom: 2 }}>Sent</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{Number(memeInteractResult.transferAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text-subtle)' }}>BAGENT</div>
+                    </div>
+                    <div style={{ background: 'color-mix(in srgb, var(--pass) 10%, transparent)', padding: '10px 12px', borderRadius: 10, textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: 'var(--pass)', marginBottom: 2 }}>Recipient Gets</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pass)' }}>{Number(memeInteractResult.netAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text-subtle)' }}>BAGENT</div>
+                    </div>
+                    <div style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', padding: '10px 12px', borderRadius: 10, textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: 'var(--accent)', marginBottom: 2 }}>Agent Fee</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>{Number(memeInteractResult.feeAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 9, color: 'var(--text-subtle)' }}>BAGENT</div>
+                    </div>
+                  </div>
+
+                  {/* Balances / token info */}
+                  {memeInteractResult.simulated ? (
+                    <div style={{ fontSize: 11, color: 'var(--text-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text)', marginBottom: 2 }}>Token Info (On-Chain)</div>
+                      {memeInteractResult.totalSupply ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Total Supply</span>
+                          <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{Number(memeInteractResult.totalSupply).toLocaleString()} {memeInteractResult.tokenSymbol || 'BAGENT'}</span>
+                        </div>
+                      ) : null}
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Fee Recipient</span>
+                        <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 10 }}>{memeInteractResult.feeRecipient.slice(0, 10)}…</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--text-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text)', marginBottom: 2 }}>Balances After Transfer</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Deployer (Signer)</span>
+                        <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{Number(memeInteractResult.balances.signer.balance).toLocaleString()} BAGENT</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Recipient</span>
+                        <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>{Number(memeInteractResult.balances.recipient.balance).toLocaleString()} BAGENT</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Agent Treasury</span>
+                        <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--accent)' }}>{Number(memeInteractResult.balances.agentTreasury.balance).toLocaleString()} BAGENT</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Message */}
+                  <div style={{ fontSize: 11, color: 'var(--text-subtle)', borderTop: '1px solid color-mix(in srgb, var(--border) 50%, transparent)', paddingTop: 8, fontStyle: 'italic' }}>
+                    {memeInteractResult.message}
+                  </div>
+
+                  {!memeInteractResult.simulated ? (
+                    <div style={{ fontSize: 11, color: 'var(--text-subtle)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <span style={{ fontWeight: 500, minWidth: 60 }}>Tx Hash</span>
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${memeInteractResult.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--accent)', textDecoration: 'underline', fontFamily: 'var(--font-mono, monospace)', fontSize: 10, wordBreak: 'break-all' }}
+                        >
+                          {memeInteractResult.txHash}
+                        </a>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <section className={classNames('panel pipeline-panel', pipelineVisible && 'panel-show')}>
@@ -1546,29 +1828,80 @@ function AppShellInternal() {
 
           {activeTab === 'stats' ? (
             <section className="stats-col">
-              <div className="focal-stat">
-                <div className="focal-number">{Math.round(countRuns)}</div>
-                <div className={classNames('focal-delta', cycleLog.length === 0 && 'neg')}>
-                  {cycleLog.length > 0 ? ('+' + String(cycleLog.length) + ' cycles run this week') : 'No cycles recorded yet'}
+              {/* Real deployed apps count + cycle count */}
+              {(() => {
+                const realApps = appsQuery.data?.apps ?? [];
+                const appCount = realApps.length;
+                const sceneCount = (appEvolutionQuery.data?.atlas ?? []).length;
+                const hasOnChain = Boolean(memeDeployResult);
+                const totalDeploys = Math.max(appCount, cycleLog.filter((c) => c.status === 'DEPLOYED').length + (hasOnChain ? 1 : 0));
+                return (
+                  <>
+                    <div className="focal-stat">
+                      <div className="focal-number">{totalDeploys}</div>
+                      <div className={classNames('focal-delta', totalDeploys === 0 && 'neg')}>
+                        {totalDeploys > 0 ? `${totalDeploys} app${totalDeploys > 1 ? 's' : ''} deployed on-chain` : 'No apps deployed yet'}
+                      </div>
+                    </div>
+
+                    <div className="stats-hero">
+                      <div><span className="hero-label">On-Chain Apps</span><strong>{appCount}</strong></div>
+                      <div><span className="hero-label">Spatial Scenes</span><strong>{sceneCount}</strong></div>
+                      <div><span className="hero-label">Build Cycles</span><strong>{cycleLog.length}</strong></div>
+                    </div>
+                  </>
+                );
+              })()}
+
+              {/* Deployed token info */}
+              {memeDeployResult ? (
+                <div className="panel glare" style={{ marginBottom: 16 }}>
+                  <h4 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                    <Rocket size={15} strokeWidth={1.5} style={{ color: 'var(--pass)' }} />
+                    Deployed Token
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '12px 0 6px' }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Token Address</div>
+                      <a
+                        href={`https://sepolia.basescan.org/token/${memeDeployResult.tokenAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono, monospace)', wordBreak: 'break-all' }}
+                      >
+                        {memeDeployResult.tokenAddress ?? 'N/A'}
+                      </a>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Block</div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{memeDeployResult.blockNumber}</span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Chain</div>
+                      <span style={{ fontSize: 12, color: 'var(--text)' }}>Base Sepolia (84532)</span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Fee Mechanism</div>
+                      <span style={{ fontSize: 12, color: 'var(--pass)' }}>3% Agent Treasury</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
-              <div className="stats-hero">
-                <div><span className="hero-label">Deployed</span><strong>{Math.round(deployedCount)}</strong></div>
-                <div><span className="hero-label">Budget Used</span><strong>${budgetCount.toFixed(2)}</strong></div>
-                <div><span className="hero-label">Pass Rate</span><strong>{cycleLog.length ? `${Math.round(passPct)}%` : '—'}</strong></div>
-              </div>
+              {cycleLog.length > 0 ? (
+                <>
+                  <div className="pass-block">
+                    <div className="pass-fill" style={{ width: `${passPct}%` }} />
+                  </div>
+                  <div className="pass-legend"><span>{passCount} PASS</span><span>{blockCount} BLOCK</span></div>
+                </>
+              ) : null}
 
-              <div className="pass-block">
-                <div className="pass-fill" style={{ width: `${passPct}%` }} />
-              </div>
-              <div className="pass-legend"><span>{passCount} PASS</span><span>{blockCount} BLOCK</span></div>
-
-              {cycleLog.length === 0 ? (
+              {cycleLog.length === 0 && !memeDeployResult ? (
                 <div className="empty-slot">
                   <div className="empty-icon"><BarChart3 size={32} strokeWidth={1} /></div>
-                  <p className="empty-title">No cycles run</p>
-                  <p className="empty-hint">Complete your first build cycle to populate analytics.</p>
+                  <p className="empty-title">No activity yet</p>
+                  <p className="empty-hint">Deploy a meme token or run a build cycle to populate analytics.</p>
                 </div>
               ) : null}
 
@@ -1626,6 +1959,44 @@ function AppShellInternal() {
                 <div className="runway-track"><div className="runway-fill" style={{ width: `${Math.min(100, ((budget.runwayDays || 0) / 30) * 100)}%` }} /></div>
               </div>
 
+              {/* On-Chain Revenue from Meme Token */}
+              {memeInteractResult ? (
+                <div className="panel glare" style={{ marginBottom: 0 }}>
+                  <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <HandCoins size={15} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
+                    On-Chain Revenue (BAGENT)
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, margin: '14px 0 8px' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)' }}>{Number(memeInteractResult.feeAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>Agent Fee Revenue</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pass)' }}>{Number(memeInteractResult.netAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>Recipient Received</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{Number(memeInteractResult.transferAmount).toLocaleString()}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-subtle)' }}>Total Transferred</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-subtle)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
+                    <span>Fee: {memeInteractResult.feePercent}</span>
+                    <span>Treasury: {Number(memeInteractResult.balances.agentTreasury.balance).toLocaleString()} BAGENT</span>
+                  </div>
+                </div>
+              ) : memeDeployResult ? (
+                <div className="panel glare" style={{ marginBottom: 0, opacity: 0.7 }}>
+                  <h4 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <HandCoins size={15} strokeWidth={1.5} />
+                    On-Chain Revenue (BAGENT)
+                  </h4>
+                  <div style={{ fontSize: 12, color: 'var(--text-subtle)', padding: '12px 0 4px' }}>
+                    Token deployed with 3% fee mechanism. Use the &quot;Fee Demo&quot; button on the Agent tab to see the fee split in action.
+                  </div>
+                </div>
+              ) : null}
+
               <div className="panel">
                 <h4>Apps</h4>
                 <div className="apps-table">
@@ -1662,9 +2033,9 @@ function AppShellInternal() {
                 {/* Top-level stats */}
                 <div className="grid grid-cols-2 gap-3 mb-6">
                   {[
-                    { label: 'App Scenes', value: appEvolutionQuery.data?.ok ? String((appEvolutionQuery.data as any).count ?? 0) : '—' },
+                    { label: 'App Scenes', value: appEvolutionQuery.data ? String(appEvolutionQuery.data.count ?? 0) : '—' },
                     { label: 'Total Markers', value: (() => {
-                      const appMarkers = ((appEvolutionQuery.data as any)?.atlas ?? []).reduce((s: number, m: any) => s + (m.agentMarkers?.length ?? 0), 0);
+                      const appMarkers = (appEvolutionQuery.data?.atlas ?? []).reduce((s: number, m: any) => s + (m.agentMarkers?.length ?? 0), 0);
                       return appMarkers > 0 ? String(appMarkers) : '—';
                     })() },
                   ].map(({ label, value }) => (
@@ -1689,12 +2060,12 @@ function AppShellInternal() {
                     {[0,1].map(i => <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] h-40 animate-pulse" />)}
                   </div>
                 ) : (() => {
-                  const atlas: any[] = (appEvolutionQuery.data as any)?.atlas ?? [];
+                  const atlas: any[] = appEvolutionQuery.data?.atlas ?? [];
                   return atlas.length === 0 ? (
                     <div className="empty-slot">
                       <div className="empty-icon"><Sparkles size={28} strokeWidth={1} /></div>
                       <p className="empty-title">No app scenes yet</p>
-                      <p className="empty-hint">Deploy an app with a run cycle and the agent will generate a Blockade Labs scene encoding its spatial memory.</p>
+                      <p className="empty-hint">Deploy a meme token and the agent will generate a Blockade Labs scene encoding its spatial memory.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

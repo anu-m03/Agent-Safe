@@ -1,0 +1,63 @@
+{
+  "appId": "meme-ae471d9f-79b7-4e71-8ce0-e5ceaa626121",
+  "ideaId": "idea-meme-ae471d9f-79b7-4e71-8ce0-e5ceaa626121",
+  "sceneId": 14999631,
+  "sceneHash": "0xd6a30269744ffa11ca6dd54dab0e827ea5d4d9ff9588ca33261529f6ac0c2668",
+  "prompt": "Luminous digital incubation chamber above neon Base blockchain cityscape. Holographic display: mini-app \"Based Agent Coin\" assembled from glowing components. Meme Culture Quadrant: vibrant color explosions, trending symbols, viral waveforms. ERC-20 manifolds: cascading coin flows between wallets in neon green streams. Pulsing cyan energy fields — app actively being evaluated. Retrofuturistic on-chain ecosystem, cinematic depth, panoramic 360.",
+  "fileUrl": "https://images.blockadelabs.com/images/imagine/Advanced_no_style_equirectangular-jpg_Luminous_digital_incubation_chamber_4400214100_14999631.jpg?ver=1",
+  "thumbUrl": "https://images.blockadelabs.com/thumbs/imagine/thumb_Advanced_no_style_thumb_Luminous_digital_incubation_chamber_6162776516_14999631.jpg?ver=1",
+  "createdAt": "2026-02-21T14:12:05.735Z",
+  "trendTags": [
+    "base",
+    "meme",
+    "demo"
+  ],
+  "title": "Based Agent Coin",
+  "status": "INCUBATING",
+  "metrics": {
+    "users": 12,
+    "revenueUsd": 2.5,
+    "impressions": 180,
+    "updatedAt": 1771683122976
+  },
+  "detectedZones": [
+    {
+      "zone": "Meme Culture Quadrant",
+      "meaning": "Visualizes the viral intent behind the 'meme' tag through vibrant color explosions and trending symbols.",
+      "domain": "Innovation"
+    },
+    {
+      "zone": "Core Incubation Pod",
+      "meaning": "Reflects the current INCUBATING status within a luminous digital chamber, highlighting the app's assembly phase.",
+      "domain": "Safety"
+    },
+    {
+      "zone": "DeFi Yield Zone",
+      "meaning": "Represented by ERC-20 manifolds and cascading coin flows, grounding the meme concept in functional transfer capabilities.",
+      "domain": "Yield"
+    }
+  ],
+  "agentMarkers": [
+    {
+      "agentName": "IncubatorBot",
+      "zone": "Core Incubation Pod",
+      "severity": "med",
+      "rationale": "The app is in the early assembly phase with modest metrics, requiring active lifecycle management."
+    },
+    {
+      "agentName": "TrendScout",
+      "zone": "Meme Culture Quadrant",
+      "severity": "med",
+      "rationale": "Monitoring the alignment between the 'meme' trend and the actual user impressions of 180."
+    },
+    {
+      "agentName": "BudgetWarden",
+      "zone": "Core Incubation Pod",
+      "severity": "med",
+      "rationale": "Revenue of $2.5 is low, necessitating a cautious approach to further resource allocation during incubation."
+    }
+  ],
+  "spatialSummary": "The environment is dominated by a luminous Core Incubation Pod where the app is being assembled above a neon Base cityscape. The Meme Culture Quadrant provides a high-energy backdrop of viral waveforms, suggesting the agent is prioritizing social visibility. Functional ERC-20 manifolds in the DeFi Yield Zone ensure that the meme-driven aesthetics are supported by actual blockchain utility.",
+  "evolutionNote": "This app marks a strategic pivot toward 'meme-fi,' where the agent is learning to synthesize viral social triggers with standard ERC-20 mechanics to capture a broader audience.",
+  "status_spatial": "complete"
+}

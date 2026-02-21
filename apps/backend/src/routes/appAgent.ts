@@ -23,10 +23,13 @@ import {
   http,
   keccak256,
   toBytes,
+  formatUnits,
+  parseUnits,
   type Hex,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
+import { MemeTokenAbi } from '../abi/erc20.js';
 import { scanTrends } from '../appAgent/trendScanner.js';
 import { generateIdea } from '../appAgent/ideaGenerator.js';
 import { runAppSafetyPipeline } from '../appAgent/safetyPipeline.js';
@@ -362,9 +365,16 @@ appAgentRouter.post('/demo-meme-deploy', async (req, res) => {
       idea: idea as unknown as Record<string, unknown>,
     });
 
+    // Fire-and-forget spatial memory generation (Blockade Labs skybox + Gemini reasoning)
+    const evolutionCtx = getEvolutionContext(8).filter((e) => e.appId !== appId);
+    generateAppSpatialMemory(app, idea as unknown as Record<string, unknown>, evolutionCtx).catch((err) => {
+      console.error('[app-agent] demo-meme-deploy spatial generation error:', err);
+    });
+
     return res.status(201).json({
       ok: true,
       app,
+      appId,
       txHash,
       tokenAddress: deployedTokenAddress,
       blockNumber: Number(receipt.blockNumber),
@@ -373,6 +383,141 @@ appAgentRouter.post('/demo-meme-deploy', async (req, res) => {
   } catch (err) {
     console.error('[app-agent] demo-meme-deploy:', err);
     return res.status(500).json({ ok: false, error: 'Demo meme deploy failed' });
+  }
+});
+
+// ─── POST /api/app-agent/demo-meme-interact ──────────────────────
+// Reads on-chain token fee params and computes a demonstration fee split.
+// If the signer holds tokens, executes a real transfer. Otherwise returns a simulation.
+appAgentRouter.post('/demo-meme-interact', async (req, res) => {
+  try {
+    const { tokenAddress, recipientAddress } = req.body ?? {};
+    if (!tokenAddress || typeof tokenAddress !== 'string') {
+      return res.status(400).json({ ok: false, error: 'tokenAddress is required' });
+    }
+
+    const rpcUrl =
+      process.env.BASE_SEPOLIA_RPC_URL ??
+      process.env.BASE_RPC_URL ??
+      process.env.RPC_URL ??
+      'https://sepolia.base.org';
+    const signerPk =
+      process.env.SWARM_SIGNER_PRIVATE_KEY ??
+      process.env.EXECUTION_SIGNER_PRIVATE_KEY;
+    if (!signerPk) {
+      return res.status(500).json({ ok: false, error: 'Missing signer private key in backend env' });
+    }
+
+    const signer = privateKeyToAccount(
+      (signerPk.startsWith('0x') ? signerPk : `0x${signerPk}`) as `0x${string}`,
+    );
+    const tokenAddr = tokenAddress as `0x${string}`;
+    const recipient = (typeof recipientAddress === 'string' && recipientAddress.startsWith('0x')
+      ? recipientAddress
+      : '0x000000000000000000000000000000000000dEaD') as `0x${string}`;
+
+    const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
+
+    // Read on-chain state (feeBps/feeRecipient may not exist on plain ERC-20s)
+    let feeBps = 0n;
+    let feeRecipientAddr = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+    let signerBal = 0n;
+    let totalSupply = 0n;
+    let tokenName = 'BAGENT';
+    let tokenSymbol = 'BAGENT';
+    try {
+      const results = await Promise.all([
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'feeBps' }).catch(() => 0n),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'feeRecipient' }).catch(() => '0x0000000000000000000000000000000000000000'),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'balanceOf', args: [signer.address] }).catch(() => 0n),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'totalSupply' }).catch(() => 0n),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'name' }).catch(() => 'BAGENT'),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'symbol' }).catch(() => 'BAGENT'),
+      ]);
+      feeBps = results[0] as bigint;
+      feeRecipientAddr = (results[1] as string) as `0x${string}`;
+      signerBal = results[2] as bigint;
+      totalSupply = results[3] as bigint;
+      tokenName = results[4] as string;
+      tokenSymbol = results[5] as string;
+    } catch (readErr) {
+      return res.status(400).json({ ok: false, error: 'Cannot read token contract — verify the token address is correct' });
+    }
+
+    const transferAmount = parseUnits('1000', 18);
+    const feeBpsNum = Number(feeBps);
+    const feeAmount = (transferAmount * BigInt(feeBpsNum)) / 10000n;
+    const netAmount = transferAmount - feeAmount;
+
+    // If signer has enough tokens, do a real transfer
+    if (signerBal >= transferAmount) {
+      const walletClient = createWalletClient({ chain: baseSepolia, transport: http(rpcUrl), account: signer });
+      const txHash = await walletClient.writeContract({
+        address: tokenAddr,
+        abi: MemeTokenAbi,
+        functionName: 'transfer',
+        args: [recipient, transferAmount],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 120_000 });
+
+      const [recipientBalAfter, feeRecipientBalAfter, signerBalAfter] = await Promise.all([
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'balanceOf', args: [recipient] }).catch(() => 0n),
+        feeRecipientAddr !== '0x0000000000000000000000000000000000000000'
+          ? publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'balanceOf', args: [feeRecipientAddr] }).catch(() => 0n)
+          : Promise.resolve(0n),
+        publicClient.readContract({ address: tokenAddr, abi: MemeTokenAbi, functionName: 'balanceOf', args: [signer.address] }).catch(() => 0n),
+      ]);
+
+      return res.json({
+        ok: true,
+        simulated: false,
+        txHash,
+        blockNumber: Number(receipt.blockNumber),
+        transferAmount: formatUnits(transferAmount, 18),
+        feeBps: feeBpsNum,
+        feePercent: `${(feeBpsNum / 100).toFixed(1)}%`,
+        feeAmount: formatUnits(feeAmount, 18),
+        netAmount: formatUnits(netAmount, 18),
+        recipient,
+        feeRecipient: feeRecipientAddr,
+        tokenName,
+        tokenSymbol,
+        totalSupply: formatUnits(totalSupply, 18),
+        balances: {
+          signer: { address: signer.address, balance: formatUnits(signerBalAfter as bigint, 18) },
+          recipient: { address: recipient, balance: formatUnits(recipientBalAfter as bigint, 18) },
+          agentTreasury: { address: feeRecipientAddr, balance: formatUnits(feeRecipientBalAfter as bigint, 18) },
+        },
+        message: `Transferred ${formatUnits(netAmount, 18)} ${tokenSymbol} to recipient, ${formatUnits(feeAmount, 18)} ${tokenSymbol} fee to agent treasury (${(feeBpsNum / 100).toFixed(1)}% fee).`,
+      });
+    }
+
+    // Otherwise return a simulation (fee demo) using on-chain parameters
+    return res.json({
+      ok: true,
+      simulated: true,
+      txHash: '0x' + '0'.repeat(64),
+      blockNumber: 0,
+      transferAmount: formatUnits(transferAmount, 18),
+      feeBps: feeBpsNum,
+      feePercent: `${(feeBpsNum / 100).toFixed(1)}%`,
+      feeAmount: formatUnits(feeAmount, 18),
+      netAmount: formatUnits(netAmount, 18),
+      recipient,
+      feeRecipient: feeRecipientAddr,
+      tokenName,
+      tokenSymbol,
+      totalSupply: formatUnits(totalSupply, 18),
+      balances: {
+        signer: { address: signer.address, balance: formatUnits(signerBal, 18) },
+        recipient: { address: recipient, balance: '0' },
+        agentTreasury: { address: feeRecipientAddr, balance: '0' },
+      },
+      message: `Fee Demo: On a 1,000 ${tokenSymbol} transfer, ${formatUnits(feeAmount, 18)} goes to agent treasury and ${formatUnits(netAmount, 18)} to recipient (${(feeBpsNum / 100).toFixed(1)}% fee). Total supply: ${Number(formatUnits(totalSupply, 18)).toLocaleString()} ${tokenSymbol}.`,
+    });
+  } catch (err) {
+    console.error('[app-agent] demo-meme-interact:', err);
+    return res.status(500).json({ ok: false, error: 'Demo meme interact failed' });
   }
 });
 

@@ -1,0 +1,47 @@
+{
+  "appId": "meme-827ac6f2-f123-4f6d-bb87-d3338729076b",
+  "ideaId": "idea-meme-827ac6f2-f123-4f6d-bb87-d3338729076b",
+  "sceneId": 14999599,
+  "sceneHash": "0xd0d82cd04c934ef2ef7fe78cf7c7c071a8c78da1eae5630d4bfb533ea3691456",
+  "prompt": "Luminous digital incubation chamber above neon Base blockchain cityscape. Holographic display: mini-app \"Based Agent Coin\" assembled from glowing components. Meme Culture Quadrant: vibrant color explosions, trending symbols, viral waveforms. ERC-20 manifolds: cascading coin flows between wallets in neon green streams. Pulsing cyan energy fields — app actively being evaluated. Retrofuturistic on-chain ecosystem, cinematic depth, panoramic 360.",
+  "fileUrl": "https://images.blockadelabs.com/images/imagine/Advanced_no_style_equirectangular-jpg_Luminous_digital_incubation_chamber_4496567372_14999599.jpg?ver=1",
+  "thumbUrl": "https://images.blockadelabs.com/thumbs/imagine/thumb_Advanced_no_style_thumb_Luminous_digital_incubation_chamber_4311369790_14999599.jpg?ver=1",
+  "createdAt": "2026-02-21T13:56:19.848Z",
+  "trendTags": [
+    "base",
+    "meme",
+    "demo"
+  ],
+  "title": "Based Agent Coin",
+  "status": "INCUBATING",
+  "metrics": {
+    "users": 12,
+    "revenueUsd": 2.5,
+    "impressions": 180,
+    "updatedAt": 1771682179843
+  },
+  "detectedZones": [
+    {
+      "zone": "Core Incubation Pod",
+      "meaning": "Central deployment and safety-pipeline validation for this app",
+      "domain": "Safety"
+    }
+  ],
+  "agentMarkers": [
+    {
+      "agentName": "TrendScout",
+      "zone": "Core Incubation Pod",
+      "severity": "med",
+      "rationale": "Trend tags: base, meme, demo"
+    },
+    {
+      "agentName": "BudgetWarden",
+      "zone": "Core Incubation Pod",
+      "severity": "low",
+      "rationale": "Budget gate passed"
+    }
+  ],
+  "spatialSummary": "The Core Incubation Pod anchors this \"Based Agent Coin\" deployment.  extend outward from it. Lifecycle status: INCUBATING.",
+  "evolutionNote": "This app represents a learning iteration; its spatial record helps the agent avoid similar dead ends.",
+  "status_spatial": "complete"
+}
