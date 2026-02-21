@@ -15,9 +15,10 @@
  *
  * Requires:
  *   SESSION_KEYS_ENABLED=true
- *   BUNDLER_RPC_URL=<pimlico or alchemy bundler for Base Sepolia>
+ *   BUNDLER_RPC_URL=<pimlico or alchemy bundler for Base>
  *   ENTRYPOINT_ADDRESS=<0x5FF13...> (defaults to v0.6)
- *   BASE_SEPOLIA_RPC_URL=<rpc>
+ *   BASE_RPC_URL=<mainnet rpc> (default path)
+ *   AGENT_TESTNET_MODE=true + BASE_SEPOLIA_RPC_URL=<rpc> (explicit testnet path)
  */
 
 import { Router } from 'express';
@@ -34,11 +35,16 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { getSession, sessionSummary } from '../state/sessionStore.js';
-import { getSwapQuote, getSwapTx, UNISWAP_TOKENS } from '../services/uniswapApi.js';
+import { getSwapQuote, getSwapTx, UNISWAP_CHAIN_ID, UNISWAP_TOKENS } from '../services/uniswapApi.js';
 import { runGeminiDecision } from '../services/gemini.js';
 import type { DecisionContext } from '../services/gemini.js';
 import { AgentSafeAccountAbi } from '../abi/AgentSafeAccount.js';
 import { EntryPointAbi } from '../abi/EntryPoint.js';
+import { buildCallDataFromIntent } from '../services/execution/callDataBuilder.js';
+import { getDeployment } from '../config/deployment.js';
+import type { ActionIntent } from '@agent-safe/shared';
+import { base } from 'viem/chains';
+import { Buffer } from 'buffer';
 
 export const agentExecuteRouter = Router();
 
@@ -56,7 +62,6 @@ const ERC20_ABI = [
 
 // ─── Constants ───────────────────────────────────────────
 
-const BASE_SEPOLIA_CHAIN_ID = 84532;
 const DEFAULT_ENTRYPOINT = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789' as const;
 
 // Gas limits (conservative; bundler will simulate actual)
@@ -69,6 +74,18 @@ const PRE_VERIFICATION_GAS = 100_000n;
 function isEnabled(): boolean {
   return process.env.SESSION_KEYS_ENABLED === 'true';
 }
+
+// ─── Production / Testnet Mode ───────────────────────────
+// Default: production (Base mainnet). Set AGENT_TESTNET_MODE=true for Sepolia.
+// Mainnet path routes calldata through buildCallDataFromIntent (all 9 gates).
+// Testnet path uses direct encoding for dev iteration.
+
+function isTestnetMode(): boolean {
+  return process.env.AGENT_TESTNET_MODE === 'true';
+}
+
+const BUILDER_CODE = process.env.BASE_BUILDER_CODE || 'agentsafe42';
+const BUILDER_SUFFIX_HEX = Buffer.from(BUILDER_CODE).toString('hex');
 
 // ─── Request Schema ──────────────────────────────────────
 
@@ -171,13 +188,14 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   }
 
   // ── 3. Fetch smart account balances ───────────────────
-  const rpcUrl =
-    process.env.BASE_SEPOLIA_RPC_URL ??
-    process.env.BASE_RPC_URL ??
-    'https://sepolia.base.org';
+  // Chain/RPC: default to mainnet via deployment config; Sepolia if AGENT_TESTNET_MODE=true
+  const testnet = isTestnetMode();
+  const rpcUrl = testnet
+    ? (process.env.BASE_SEPOLIA_RPC_URL ?? process.env.BASE_RPC_URL ?? 'https://sepolia.base.org')
+    : getDeployment().rpcUrl;
 
   const publicClient = createPublicClient({
-    chain: baseSepolia,
+    chain: testnet ? baseSepolia : base,
     transport: http(rpcUrl),
   }) as PublicClient;
 
@@ -217,7 +235,7 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
 
   // ── 6. Gemini decision ─────────────────────────────────
   const context: DecisionContext = {
-    chainId: BASE_SEPOLIA_CHAIN_ID,
+    chainId: UNISWAP_CHAIN_ID,
     swapper: smartAccount,
     goal: 'Autonomous agent rebalance',
     supportedTokens: Object.keys(TOKEN_MAP),
@@ -359,9 +377,9 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   }
 
   // ── 11. Build UserOp ───────────────────────────────────
-  const entryPoint =
-    (process.env.ENTRYPOINT_ADDRESS as `0x${string}` | undefined) ??
-    DEFAULT_ENTRYPOINT;
+  const entryPoint = testnet
+    ? ((process.env.ENTRYPOINT_ADDRESS as `0x${string}` | undefined) ?? DEFAULT_ENTRYPOINT)
+    : getDeployment().entryPoint;
 
   const smartAccountAddr = smartAccount as `0x${string}`;
 
@@ -382,15 +400,56 @@ agentExecuteRouter.post('/uniswap/execute', async (req, res) => {
   }
 
   // callData = AgentSafeAccount.execute(to, value, data)
-  const accountCallData = encodeFunctionData({
-    abi: AgentSafeAccountAbi,
-    functionName: 'execute',
-    args: [
-      swapTx.to as `0x${string}`,
-      BigInt(swapTx.value ?? '0x0'),
-      swapTx.data as `0x${string}`,
-    ],
-  });
+  // Production: route through callDataBuilder with full safety gates (9 checks).
+  // Testnet: direct encoding with ERC-8021 builder code suffix.
+  let accountCallData: `0x${string}`;
+
+  if (!testnet) {
+    // ── Production path: callDataBuilder enforces ──
+    //   Gate 0: ENABLE_SWAP_REBALANCE env flag
+    //   Gate 1-2: router address format + allowlist
+    //   Gate 3-4: calldata format + known selector
+    //   Gate 5-6: swapAmountIn ≤ maxPerCycleWei
+    //   Gate 7-8: ETH value parse + cap
+    const swapIntent: ActionIntent = {
+      intentId: `swap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      runId: `agent-execute-${Date.now()}`,
+      action: 'SWAP_REBALANCE',
+      chainId: getDeployment().chainId,
+      to: smartAccount,
+      value: String(BigInt(swapTx.value ?? '0x0')),
+      data: '0x',
+      meta: {
+        routerTarget: swapTx.to,
+        routerCalldata: swapTx.data,
+        swapAmountIn: proposedAmount.toString(),
+        maxPerCycleWei: session.limits.maxAmountIn.toString(),
+      },
+    };
+
+    const buildResult = buildCallDataFromIntent(swapIntent);
+    if (!buildResult.ok) {
+      console.warn(`[agentExecute] Calldata builder rejected: ${buildResult.reason}`);
+      return res.status(403).json({
+        ok: false,
+        error: `Swap calldata rejected by safety gates: ${buildResult.reason}`,
+        reason: buildResult.reason,
+      });
+    }
+    accountCallData = buildResult.callData;
+  } else {
+    // ── Testnet path: direct encoding + ERC-8021 builder code ──
+    const raw = encodeFunctionData({
+      abi: AgentSafeAccountAbi,
+      functionName: 'execute',
+      args: [
+        swapTx.to as `0x${string}`,
+        BigInt(swapTx.value ?? '0x0'),
+        swapTx.data as `0x${string}`,
+      ],
+    });
+    accountCallData = `${raw}${BUILDER_SUFFIX_HEX}` as `0x${string}`;
+  }
 
   const gasPrice = await publicClient.getGasPrice().catch(() => parseGwei('2'));
   const maxFeePerGas = (gasPrice * 120n) / 100n; // 20% buffer
