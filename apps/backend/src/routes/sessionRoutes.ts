@@ -35,6 +35,10 @@ import { getDeployment } from '../config/deployment.js';
 
 export const sessionRouter = Router();
 const BASE_SEPOLIA_CHAIN_ID = 84532;
+const LEGACY_DEFAULT_MAX_USDC_PER_TRADE = 2_000_000n; // 2 USDC (6 decimals)
+const MAX_SEED_AMOUNT_BASE_UNITS = 1_000_000_000_000_000n; // 1,000,000,000 USDC
+const TRADE_CAP_BPS = 2_000n; // 20.00%
+const BPS_DENOMINATOR = 10_000n;
 
 // ─── Feature Gate ────────────────────────────────────────
 
@@ -52,10 +56,15 @@ const StartSchema = z.object({
   swapper: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid 0x address'),
   smartAccount: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Must be a valid 0x address'),
   validForSeconds: z.number().int().min(60).max(86400).default(3600),
+  seedAmountInBaseUnits: z
+    .string()
+    .regex(/^\d+$/, 'Must be numeric (base units)')
+    .optional(),
+  // Deprecated input kept for backward compatibility.
   maxUsdcPerTrade: z
     .string()
     .regex(/^\d+$/, 'Must be numeric (USDC in base units, 6 decimals)')
-    .default('2000000'), // 2 USDC
+    .optional(),
   maxSlippageBps: z.number().int().min(1).max(1000).default(50),
   maxPriceImpactBps: z.number().int().min(1).max(10000).default(500),
 });
@@ -88,10 +97,64 @@ sessionRouter.post('/start', async (req, res) => {
     swapper,
     smartAccount,
     validForSeconds,
+    seedAmountInBaseUnits,
     maxUsdcPerTrade,
     maxSlippageBps,
     maxPriceImpactBps,
   } = parsed.data;
+
+  // ── Seed semantics: derive per-cycle cap = 20% of seed ──
+  // Backward compatibility:
+  //   - New: seedAmountInBaseUnits (preferred)
+  //   - Legacy: maxUsdcPerTrade (deprecated) -> seed = cap * 5
+  //   - Legacy default path retained to avoid breaking old frontends
+  let seedInputSource: 'seedAmountInBaseUnits' | 'maxUsdcPerTrade' | 'legacyDefault';
+  let seedAmount: bigint;
+
+  if (seedAmountInBaseUnits && maxUsdcPerTrade) {
+    return res.status(400).json({
+      ok: false,
+      error:
+        'Provide either seedAmountInBaseUnits (preferred) OR maxUsdcPerTrade (deprecated), not both.',
+    });
+  }
+
+  if (seedAmountInBaseUnits) {
+    seedInputSource = 'seedAmountInBaseUnits';
+    seedAmount = BigInt(seedAmountInBaseUnits);
+  } else if (maxUsdcPerTrade) {
+    seedInputSource = 'maxUsdcPerTrade';
+    seedAmount = BigInt(maxUsdcPerTrade) * 5n;
+  } else {
+    seedInputSource = 'legacyDefault';
+    seedAmount = LEGACY_DEFAULT_MAX_USDC_PER_TRADE * 5n;
+    console.warn(
+      '[sessionRoutes] /start called without seedAmountInBaseUnits or maxUsdcPerTrade; applying legacy default cap derivation.',
+    );
+  }
+
+  if (seedAmount <= 0n) {
+    return res.status(400).json({
+      ok: false,
+      error: 'seedAmountInBaseUnits must be greater than 0.',
+    });
+  }
+
+  if (seedAmount > MAX_SEED_AMOUNT_BASE_UNITS) {
+    return res.status(400).json({
+      ok: false,
+      error: `seedAmountInBaseUnits exceeds max allowed (${MAX_SEED_AMOUNT_BASE_UNITS.toString()} base units).`,
+    });
+  }
+
+  const derivedMaxTradeCapPerCycle = (seedAmount * TRADE_CAP_BPS) / BPS_DENOMINATOR;
+  if (derivedMaxTradeCapPerCycle <= 0n) {
+    return res.status(400).json({
+      ok: false,
+      error:
+        'Derived max trade cap per cycle is 0. Increase seedAmountInBaseUnits so 20% cap is at least 1 base unit.',
+    });
+  }
 
   // Optionally read the current swarmSigner so we can restore it on stop
   let previousSwarmSigner: string | null = null;
@@ -117,7 +180,8 @@ sessionRouter.post('/start', async (req, res) => {
     swapper,
     smartAccount,
     validForSeconds,
-    maxAmountIn: BigInt(maxUsdcPerTrade),
+    seedAmountInBaseUnits: seedAmount,
+    maxAmountIn: derivedMaxTradeCapPerCycle,
     maxSlippageBps,
     maxPriceImpactBps,
     previousSwarmSigner,
@@ -139,6 +203,15 @@ sessionRouter.post('/start', async (req, res) => {
   return res.json({
     ok: true,
     session: sessionSummary(session),
+    capModel: {
+      seedAmountInBaseUnits: session.limits.seedAmountInBaseUnits.toString(),
+      maxTradeCapPerCycleBaseUnits:
+        session.limits.maxTradeCapPerCycleBaseUnits.toString(),
+      capFormula:
+        'maxTradeCapPerCycleBaseUnits = floor(seedAmountInBaseUnits * 20 / 100)',
+      inputSource: seedInputSource,
+      legacyField: 'maxUsdcPerTrade (deprecated)',
+    },
     txToSign,
     instructions:
       'Sign and submit txToSign from your wallet (swapper address). ' +
