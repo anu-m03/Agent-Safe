@@ -12,6 +12,7 @@ import {
   recordBurn,
   getGlobalBurnToday,
 } from '../state/appAgentStore.js';
+import { getEvolutionContext } from '../stores/appSpatialStore.js';
 
 export type RunCycleStatus = 'DEPLOYED' | 'REJECTED' | 'BUDGET_BLOCKED';
 
@@ -29,6 +30,8 @@ export interface RunCycleResult {
   budgetRemaining: number;
   pipelineLogs: PipelineLogEntry[];
   baseNative: { chain: string; lowFeeMode: boolean; attributionReady: boolean };
+  /** Compact history of past app creations (from appSpatialStore) for agent context */
+  evolutionContext: ReturnType<typeof getEvolutionContext>;
 }
 
 const ALLOWED_TEMPLATES = ['base-miniapp-v1'];
@@ -96,6 +99,19 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
   const pipelineLogs: PipelineLogEntry[] = [];
   const baseNative = { chain: 'base', lowFeeMode: true, attributionReady: true };
 
+  // ─ Load evolution context so the agent can reflect on past creations ────
+  // This gives the LLM (and the novelty checker) visibility into what
+  // was built before, helping it avoid redundancy and spot growth patterns.
+  const evolutionContext = getEvolutionContext(10);
+  if (evolutionContext.length > 0) {
+    pipelineLogs.push({
+      step: 'loadEvolutionContext',
+      ok: true,
+      pastApps: evolutionContext.length,
+      recentTitles: evolutionContext.slice(0, 3).map((e) => e.title),
+    });
+  }
+
   // 1. Fetch trends (mock)
   const scan = await scanTrends(intent);
   pipelineLogs.push({ step: 'fetchTrends', ok: true, tags: scan.tags });
@@ -114,6 +130,7 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       budgetRemaining: getBudgetRemaining(),
       pipelineLogs,
       baseNative,
+      evolutionContext,
     };
   }
 
@@ -126,6 +143,7 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       budgetRemaining: getBudgetRemaining(),
       pipelineLogs,
       baseNative,
+      evolutionContext,
     };
   }
 
@@ -139,6 +157,7 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       budgetRemaining: getBudgetRemaining(),
       pipelineLogs,
       baseNative,
+      evolutionContext,
     };
   }
 
@@ -156,6 +175,7 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
       budgetRemaining: getBudgetRemaining(),
       pipelineLogs,
       baseNative,
+      evolutionContext,
     };
   }
 
@@ -167,5 +187,6 @@ export async function executeRunCycle(walletAddress: string, intent?: string): P
     budgetRemaining: getBudgetRemaining(),
     pipelineLogs,
     baseNative,
+    evolutionContext,
   };
 }

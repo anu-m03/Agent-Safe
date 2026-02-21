@@ -19,6 +19,14 @@ import {
   getApp as getStateApp,
 } from '../state/appAgentStore.js';
 import { APP_STATUS } from '../appAgent/types.js';
+import {
+  generateAppSpatialMemory,
+} from '../services/appSpatialService.js';
+import {
+  loadAppSpatialMemory,
+  listAllAppSpatialMemories,
+  getEvolutionContext,
+} from '../stores/appSpatialStore.js';
 
 export const appAgentRouter = Router();
 
@@ -75,6 +83,8 @@ appAgentRouter.post('/run-cycle', async (req, res) => {
       budgetRemaining: result.budgetRemaining,
       pipelineLogs: result.pipelineLogs,
       baseNative: result.baseNative,
+      // The agent's creative history — spatial context fed back from appSpatialStore
+      evolutionContext: result.evolutionContext,
     });
   } catch (err) {
     console.error('[app-agent] run-cycle:', err);
@@ -123,7 +133,16 @@ appAgentRouter.post('/deploy', async (req, res) => {
       return res.status(400).json({ ok: false, error: out.reason });
     }
     saveApp(out.app);
-    res.json({ ok: true, app: out.app });
+
+    // ─── Auto-trigger Blockade Labs skybox (fire-and-forget) ───
+    // Kicks off background generation of the 360° spatial memory for
+    // this app so the evolution atlas is populated automatically.
+    const evolutionCtx = getEvolutionContext(8).filter((e) => e.appId !== out.app.id);
+    generateAppSpatialMemory(out.app, idea as Record<string, unknown>, evolutionCtx).catch(
+      (spatialErr) => console.error('[app-agent/deploy] spatial generation error:', spatialErr),
+    );
+
+    res.json({ ok: true, app: out.app, spatialStatus: 'generating' });
   } catch (err) {
     console.error('[app-agent] deploy:', err);
     res.status(500).json({ error: 'Deploy failed' });
@@ -177,4 +196,104 @@ appAgentRouter.get('/:appId/status', (req, res) => {
     app,
     incubationDecision: decision,
   });
+});
+
+// ─── GET /api/app-agent/atlas ─────────────────────────────
+// Returns the full evolution atlas: all spatial memories of past app creations.
+// Used by the frontend to render the Blockade Labs 360° evolution map.
+appAgentRouter.get('/atlas', (_req, res) => {
+  try {
+    const memories = listAllAppSpatialMemories();
+    res.json({
+      count: memories.length,
+      atlas: memories,
+      // Compact context view for LLM prompt injection
+      evolutionContext: getEvolutionContext(10),
+    });
+  } catch (err) {
+    console.error('[app-agent] atlas:', err);
+    res.status(500).json({ error: 'Atlas retrieval failed' });
+  }
+});
+
+// ─── GET /api/app-agent/:appId/space ────────────────────
+// Returns the spatial memory for a specific app (if it exists).
+appAgentRouter.get('/:appId/space', (req, res) => {
+  try {
+    const memory = loadAppSpatialMemory(req.params.appId);
+    if (!memory) {
+      return res.status(404).json({ error: 'No spatial memory for this app — generate one first.' });
+    }
+    res.json(memory);
+  } catch (err) {
+    console.error('[app-agent] space GET:', err);
+    res.status(500).json({ error: 'Spatial memory retrieval failed' });
+  }
+});
+
+// ─── POST /api/app-agent/:appId/space ───────────────────
+// Generate (or regenerate) the Blockade Labs 360° skybox + spatial reasoning
+// for the specified deployed app. Response is async — poll GET /:appId/space
+// for status. Set { regenerate: true } in body to force regeneration.
+appAgentRouter.post('/:appId/space', async (req, res) => {
+  try {
+    const id = req.params.appId;
+    const regenerate = req.body?.regenerate === true;
+
+    // Check existing (return immediately if cached and not forcing regeneration)
+    const existing = loadAppSpatialMemory(id);
+    if (existing && existing.status_spatial === 'complete' && !regenerate) {
+      return res.json({ cached: true, memory: existing });
+    }
+
+    // Resolve the app record — try full GeneratedApp first, fall back to state record
+    const app = getApp(id);
+    const stateRecord = getStateApp(id);
+
+    if (!app && !stateRecord) {
+      return res.status(404).json({ error: 'App not found' });
+    }
+
+    // Retrieve the raw idea from the state store (populated by run-cycle / deploy routes)
+    const ideaRaw: Record<string, unknown> = stateRecord?.idea ?? {};
+
+    // Build a minimal GeneratedApp if only state record is available (run-cycle path)
+    const resolvedApp = app ?? {
+      id,
+      ideaId: (ideaRaw.id as string) ?? id,
+      deploymentUrl: '',
+      status: (stateRecord?.supportStatus === 'HANDED_TO_USER'
+        ? APP_STATUS.HANDED_TO_USER
+        : stateRecord?.supportStatus === 'SUNSET'
+          ? APP_STATUS.DROPPED
+          : APP_STATUS.INCUBATING),
+      ownerWallet: '0x0',
+      createdAt: stateRecord?.createdAt ?? Date.now(),
+      incubationStartedAt: stateRecord?.createdAt ?? Date.now(),
+      metrics: {
+        users: stateRecord?.metrics.users ?? 0,
+        revenueUsd: stateRecord?.metrics.revenue ?? 0,
+        impressions: stateRecord?.metrics.impressions ?? 0,
+        updatedAt: Date.now(),
+      },
+      revenueShareBps: 500,
+    };
+
+    // Pull evolution context for LLM 
+    const evolutionCtx = getEvolutionContext(8).filter((e) => e.appId !== id);
+
+    // Kick off generation (async — fire-and-forget, client polls GET /:appId/space)
+    generateAppSpatialMemory(resolvedApp, ideaRaw, evolutionCtx).catch((err) => {
+      console.error('[app-agent] space POST background error:', err);
+    });
+
+    res.status(202).json({
+      status: 'processing',
+      appId: id,
+      message: 'Skybox generation started — poll GET /api/app-agent/:appId/space for result',
+    });
+  } catch (err) {
+    console.error('[app-agent] space POST:', err);
+    res.status(500).json({ error: 'Spatial generation failed' });
+  }
 });
